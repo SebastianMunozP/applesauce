@@ -1,0 +1,14 @@
+# Built binaries
+/applesauce
+/apple_pose/test_apples
+
+# One-off scripts
+/cmd/
+/apple_pose/cmd/
+
+# Credential files
+creds.json
+*-creds.json
+
+# Test data
+testdata/
