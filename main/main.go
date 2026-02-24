@@ -55,6 +55,7 @@ func main() {
 	if err != nil {
 		logger.Fatal(err)
 	}
+	_ = r
 
 	if err := applesauce.Run(ctx, r); err != nil {
 		logger.Fatal(err)

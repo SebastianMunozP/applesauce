@@ -34,16 +34,14 @@ cmd/record_positions/  Utility to read current arm joint positions from the live
 
 Holds all hardware references, the motion service, the `applepose.Detector`, and cycle state.
 
-**Required resources** (NewRobot fails without these):
+**All resources are required** (NewRobot fails without any of these):
 - `xarm7` — primary arm (7-DOF), does grasping, peeling placement, core removal
 - `secondary-arm` — secondary arm (6-DOF), presses release lever
-- `arm_mount` — gripper on the primary arm
-- `builtin` — motion service
-
-**Optional/stub resources** (nil with warning if unavailable):
 - `peeling-arm` — drives the crank for peeling
+- `arm_mount` — gripper on the primary arm
 - `peeling-gripper` — grips the crank handle
-- `primary-cam`, `secondary-cam` — depth cameras (names TBD)
+- `primary-cam`, `secondary-cam` — depth cameras
+- `builtin` — motion service
 
 ## Motion Helpers
 

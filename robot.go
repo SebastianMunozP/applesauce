@@ -27,15 +27,15 @@ type Robot struct {
 	// Arms
 	primaryArm   arm.Arm
 	secondaryArm arm.Arm
-	peelingArm   arm.Arm // STUB: not yet configured
+	peelingArm   arm.Arm
 
 	// Grippers
 	appleGripper   gripper.Gripper
-	peelingGripper gripper.Gripper // STUB: not yet configured
+	peelingGripper gripper.Gripper
 
 	// Cameras
-	primaryCam   camera.Camera // STUB: name TBD
-	secondaryCam camera.Camera // STUB: name TBD
+	primaryCam   camera.Camera
+	secondaryCam camera.Camera
 
 	// Services
 	motion motion.Service
@@ -84,7 +84,7 @@ type PeelingState struct {
 }
 
 // NewRobot creates a Robot by looking up all hardware resources from the machine.
-// Resources that aren't configured yet will be nil with a warning logged.
+// All resources are required; NewRobot returns an error if any are missing.
 func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (*Robot, error) {
 	r := &Robot{
 		logger:  logger,
@@ -106,13 +106,12 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	}
 	r.secondaryArm = secondaryArm
 
-	// Peeling arm — optional stub.
+	// Peeling arm — required.
 	peelingArm, err := arm.FromProvider(machine, "peeling-arm")
 	if err != nil {
-		logger.Warnf("Peeling arm not available (stub): %v", err)
-	} else {
-		r.peelingArm = peelingArm
+		return nil, fmt.Errorf("peeling arm: %w", err)
 	}
+	r.peelingArm = peelingArm
 
 	// Apple gripper — required.
 	appleGripper, err := gripper.FromProvider(machine, "arm_mount")
@@ -121,29 +120,26 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	}
 	r.appleGripper = appleGripper
 
-	// Peeling gripper — optional stub.
+	// Peeling gripper — required.
 	peelingGripper, err := gripper.FromProvider(machine, "peeling-gripper")
 	if err != nil {
-		logger.Warnf("Peeling gripper not available (stub): %v", err)
-	} else {
-		r.peelingGripper = peelingGripper
+		return nil, fmt.Errorf("peeling gripper: %w", err)
 	}
+	r.peelingGripper = peelingGripper
 
-	// Primary camera — optional stub.
+	// Primary camera — required.
 	primaryCam, err := camera.FromProvider(machine, "primary-cam")
 	if err != nil {
-		logger.Warnf("Primary camera not available (stub): %v", err)
-	} else {
-		r.primaryCam = primaryCam
+		return nil, fmt.Errorf("primary camera: %w", err)
 	}
+	r.primaryCam = primaryCam
 
-	// Secondary camera — optional stub.
+	// Secondary camera — required.
 	secondaryCam, err := camera.FromProvider(machine, "secondary-cam")
 	if err != nil {
-		logger.Warnf("Secondary camera not available (stub): %v", err)
-	} else {
-		r.secondaryCam = secondaryCam
+		return nil, fmt.Errorf("secondary camera: %w", err)
 	}
+	r.secondaryCam = secondaryCam
 
 	// Motion service — required.
 	motionSvc, err := motion.FromProvider(machine, "builtin")
