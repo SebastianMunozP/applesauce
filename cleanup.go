@@ -16,10 +16,6 @@ func Retract(ctx context.Context, r *Robot) error {
 		r.logger.Warnf("Release lever: %v", err)
 	}
 
-	if err := retractSpikes(ctx, r); err != nil {
-		r.logger.Warnf("Spike retraction: %v", err)
-	}
-
 	if SecondaryReleaseLeverApproach != nil {
 		if err := returnSecondaryArm(ctx, r); err != nil {
 			r.logger.Warnf("Secondary arm return: %v", err)
@@ -109,12 +105,7 @@ func ResetMachine(ctx context.Context, r *Robot) error {
 		r.logger.Warnf("Release lever: %v", err)
 	}
 
-	// Step 3: Peeling arm retracts spikes from core.
-	if err := retractSpikes(ctx, r); err != nil {
-		r.logger.Warnf("Spike retraction: %v", err)
-	}
-
-	// Step 4: Secondary arm returns to viewing position.
+	// Step 3: Secondary arm returns to viewing position.
 	if SecondaryReleaseLeverApproach != nil {
 		// Move above approach first.
 		if err := returnSecondaryArm(ctx, r); err != nil {
@@ -122,7 +113,7 @@ func ResetMachine(ctx context.Context, r *Robot) error {
 		}
 	}
 
-	// Step 5: Primary arm deposits core and returns to viewing position.
+	// Step 4: Primary arm deposits core and returns to viewing position.
 	if err := depositCoreAndReturn(ctx, r); err != nil {
 		r.logger.Warnf("Core deposit: %v", err)
 	}
@@ -172,34 +163,45 @@ func grabCore(ctx context.Context, r *Robot) error {
 // pressReleaseLever uses the secondary arm to press the release lever.
 func pressReleaseLever(ctx context.Context, r *Robot) error {
 	if SecondaryReleaseLeverApproach == nil {
-		r.logger.Warn("SecondaryReleaseLeverApproach not recorded; skipping lever press")
+		r.logger.Warn("SecondaryReleaseLeverApproach not configured; skipping lever press")
 		return nil
 	}
 
-	// Move to 200mm above the approach position.
-	if err := r.moveToJoints(ctx, "secondary-arm", SecondaryReleaseLeverApproach); err != nil {
-		return fmt.Errorf("move to lever approach joints: %w", err)
+	aboveApproach := poseAbove(SecondaryReleaseLeverApproach, 200)
+
+	r.logger.Info("Moving above lever approach")
+	if err := r.moveFree(ctx, "secondary-arm", aboveApproach, nil); err != nil {
+		return fmt.Errorf("move above lever approach: %w", err)
+	}
+
+	if err := r.moveLinear(ctx, "secondary-arm", SecondaryReleaseLeverApproach, nil); err != nil {
+		return fmt.Errorf("move to lever approach: %w", err)
 	}
 
 	if SecondaryReleaseLeverPressPose == nil {
 		r.logger.Warn("SecondaryReleaseLeverPressPose not configured (stub); lever press simulated")
+		if err := r.moveLinear(ctx, "secondary-arm", aboveApproach, nil); err != nil {
+			r.logger.Warnf("retract from lever approach: %v", err)
+		}
 		return nil
 	}
 
-	// Linear move to press the lever down.
-	// STUB: the press pose needs to be measured.
 	r.logger.Info("Pressing release lever")
-	abovePress := poseAbove(SecondaryReleaseLeverPressPose, 200)
-	if err := r.moveFree(ctx, "secondary-arm", abovePress, nil); err != nil {
-		return fmt.Errorf("move above lever: %w", err)
-	}
-
 	if err := r.moveLinear(ctx, "secondary-arm", SecondaryReleaseLeverPressPose, nil); err != nil {
 		return fmt.Errorf("press lever: %w", err)
 	}
+	
+	err := retractSpikes(ctx, r)
+	if err != nil {
+		return err
+	}
+	
+	if err := r.moveLinear(ctx, "secondary-arm", SecondaryReleaseLeverApproach, nil); err != nil {
+		return fmt.Errorf("move to lever approach: %w", err)
+	}
 
-	// Return to approach position.
-	if err := r.moveLinear(ctx, "secondary-arm", abovePress, nil); err != nil {
+	// Return to 200mm above approach.
+	if err := r.moveLinear(ctx, "secondary-arm", aboveApproach, nil); err != nil {
 		return fmt.Errorf("retract from lever: %w", err)
 	}
 
@@ -220,7 +222,7 @@ func retractSpikes(ctx context.Context, r *Robot) error {
 	}
 
 	r.logger.Info("Retracting spikes from core")
-	if err := r.peelingArm.MoveToPosition(ctx, PeelerSpikeRetractPose, nil); err != nil {
+	if err := r.moveFree(ctx, "peeling-arm", PeelerSpikeRetractPose, nil); err != nil {
 		return fmt.Errorf("retract spikes: %w", err)
 	}
 

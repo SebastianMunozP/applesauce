@@ -200,6 +200,7 @@ func (r *Robot) moveToJoints(ctx context.Context, componentName string, joints [
 	if err != nil {
 		return fmt.Errorf("get current inputs: %w", err)
 	}
+	fmt.Println("currentInputs", currentInputs)
 
 	configuration := make(map[string]interface{}, len(currentInputs))
 	for name, inputs := range currentInputs {
@@ -216,8 +217,9 @@ func (r *Robot) moveToJoints(ctx context.Context, componentName string, joints [
 		goalVals[i] = v
 	}
 	configuration[componentName] = goalVals
+	fmt.Println("goal inputs", configuration)
 
-	_, err = r.motion.Move(ctx, motion.MoveReq{
+	ret, err := r.motion.Move(ctx, motion.MoveReq{
 		ComponentName: componentName,
 		Extra: map[string]interface{}{
 			"goal_state": map[string]interface{}{
@@ -225,6 +227,8 @@ func (r *Robot) moveToJoints(ctx context.Context, componentName string, joints [
 			},
 		},
 	})
+	fmt.Println(ret)
+	fmt.Println(err)
 	return err
 }
 

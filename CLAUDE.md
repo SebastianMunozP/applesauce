@@ -51,7 +51,7 @@ All arm movement goes through three helpers on `Robot`:
 - **`moveFree(ctx, componentName, destPose, worldState)`** — `motion.Move` with no constraints. For repositioning between stations.
 - **`moveToJoints(ctx, componentName, joints)`** — `motion.Move` with joint goal in Extra map. Returns error on nil joints (stub guard). Used for recorded positions.
 
-The crank routine bypasses the motion service and calls `arm.MoveToPosition` directly for each 1mm step to avoid planning overhead.
+The crank routine calls `moveLinear` for each 1mm step.
 
 ## Positions (`positions.go`)
 
@@ -92,7 +92,7 @@ Extracts stem/calyx from `TargetApple.Features` (confidence threshold 0.6). If m
 Converts the feature vector into an arm orientation aligning the apple axis with the peeler spike axis (+X). Moves above peeler → linear descent into jaws → linear push onto spikes → open gripper → retreat. Skips if peeler poses aren't configured.
 
 ### Crank (`crank.go`)
-Spiral: 59.5mm radius, 6mm pitch/rev in -X, 23 revolutions. Circle in YZ plane. ~374 steps/rev at 1mm arc. Uses `peelingArm.MoveToPosition` per step. Logs each revolution.
+Spiral: 59.5mm radius, 6mm pitch/rev in -X, 23 revolutions. Circle in YZ plane. ~374 steps/rev at 1mm arc. Uses `moveLinear` per step. Logs each revolution.
 
 ### RemoveApple (`cleanup.go`)
 Approaches peeled apple on peeler from -X → open → linear approach → grab → linear pull in -X → moveFree to peeled bowl → open.
