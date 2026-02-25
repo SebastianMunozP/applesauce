@@ -188,21 +188,40 @@ func (r *Robot) moveFree(ctx context.Context, componentName string, dest spatial
 // moveToJoints moves an arm to the given joint positions via the motion service,
 // which plans a collision-free path that respects configured obstacles.
 // Returns an error if joints are nil (stub guard).
+//
+// The motion service requires goal inputs for ALL components with nonzero DOF,
+// so we fetch current inputs for every component and only override the target.
 func (r *Robot) moveToJoints(ctx context.Context, componentName string, joints []referenceframe.Input) error {
 	if joints == nil {
 		return fmt.Errorf("cannot move to nil joint positions (position not yet recorded)")
 	}
-	jointValues := make([]interface{}, len(joints))
-	for i, v := range joints {
-		jointValues[i] = v
+
+	currentInputs, err := r.machine.CurrentInputs(ctx)
+	if err != nil {
+		return fmt.Errorf("get current inputs: %w", err)
 	}
-	_, err := r.motion.Move(ctx, motion.MoveReq{
+
+	configuration := make(map[string]interface{}, len(currentInputs))
+	for name, inputs := range currentInputs {
+		vals := make([]interface{}, len(inputs))
+		for i, v := range inputs {
+			vals[i] = v
+		}
+		configuration[name] = vals
+	}
+
+	// Override the target component with the desired goal joints.
+	goalVals := make([]interface{}, len(joints))
+	for i, v := range joints {
+		goalVals[i] = v
+	}
+	configuration[componentName] = goalVals
+
+	_, err = r.motion.Move(ctx, motion.MoveReq{
 		ComponentName: componentName,
 		Extra: map[string]interface{}{
 			"goal_state": map[string]interface{}{
-				"configuration": map[string]interface{}{
-					componentName: jointValues,
-				},
+				"configuration": configuration,
 			},
 		},
 	})
