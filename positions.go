@@ -18,7 +18,7 @@ var (
 	// PeelingCrankGraspJoints is the joint position for the peeling arm
 	// to grasp the crank handle. Recorded from peeling-arm's position.
 	PeelingCrankGraspJoints = []referenceframe.Input{
-		-2.294511, -0.168569, -1.236994, 3.271444, 0.133731, -0.133307,
+		-2.286582, -0.211757, -1.216493, 3.367374, 0.112762, -0.228739,
 	}
 
 	// SecondaryViewingJoints is the joint position for the secondary arm
@@ -79,8 +79,11 @@ var (
 	)
 
 	// CrankCenter is the center of the crank circle in the world frame.
-	// The crank rotates in the YZ plane at this center point.
 	// Recorded 2026-02-25: peeling-gripper world XY + (gripper Z + 59.5mm).
-	CrankCenter = r3.Vector{X: 596.858401, Y: 430.266941, Z: 1114.342907}
+	CrankCenter = r3.Vector{X: 583.131634, Y: 412.400876, Z: 1113.198631}
+
+	// CrankAxis is the unit vector along which the spiral advances.
+	// Defaults to -X (the peeler spike direction).
+	CrankAxis = r3.Vector{X: -1, Y: 0, Z: 0.05}
 
 )

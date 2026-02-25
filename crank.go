@@ -7,19 +7,23 @@ import (
 
 	"github.com/golang/geo/r3"
 
+	"go.viam.com/rdk/motionplan"
+	"go.viam.com/rdk/motionplan/armplanning"
+	"go.viam.com/rdk/referenceframe"
+	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/spatialmath"
 )
 
 const (
 	crankRadiusMm    = 59.5
-	crankPitchMm     = 6.0 // Linear advance per revolution in -X direction.
-	crankRevolutions = 2  // 23
+	crankPitchMm     = 6.0 // Linear advance per revolution along CrankAxis.
+	crankRevolutions = 15  // 23
 	crankStepMm      = 1.0
 )
 
 // Crank drives the peeling arm through a spiral path to peel the apple.
 // The spiral has a 59.5mm radius, 6mm pitch per revolution, for 23 revolutions.
-// Each step is approximately 1mm of arc length for smooth motion.
+// All waypoints are batched into a single motion.Move call for smooth execution.
 func Crank(ctx context.Context, r *Robot) error {
 	if r.peelingArm == nil {
 		r.logger.Warn("Peeling arm not available (stub); skipping crank")
@@ -56,56 +60,61 @@ func Crank(ctx context.Context, r *Robot) error {
 	r.logger.Infof("Cranking: R=%.0fmm, pitch=%.0fmm/rev, %d revs, %d steps/rev, %d total steps",
 		crankRadiusMm, crankPitchMm, crankRevolutions, stepsPerRev, totalSteps)
 
-	// Starting position: the crank center in world frame.
-	center := CrankCenter
+	// Build an orthonormal basis for the spiral from CrankAxis.
+	axis := CrankAxis.Normalize()
+	ref := r3.Vector{X: 0, Y: 1, Z: 0}
+	if math.Abs(axis.Dot(ref)) > 0.9 {
+		ref = r3.Vector{X: 0, Y: 0, Z: 1}
+	}
+	u := ref.Sub(axis.Mul(axis.Dot(ref))).Normalize() // Gram-Schmidt
+	w := axis.Cross(u)
 
-	// Record the starting X position for pitch calculation.
-	startX := center.X
+	center := gp.Add(r3.Vector{0, 0, 59.5})
+	offset := gp.Sub(center)
+	startAngle := math.Atan2(offset.Dot(w), offset.Dot(u))
 
-	for step := 0; step < totalSteps; step++ {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		// Parametric angle.
-		angle := 2 * math.Pi * float64(step) / float64(stepsPerRev)
-
-		// Revolutions completed (fractional).
+	// Compute the world-frame pose for a given spiral step.
+	poseAtStep := func(step int) spatialmath.Pose {
+		angle := startAngle + 2*math.Pi*float64(step)/float64(stepsPerRev)
 		revsCompleted := float64(step) / float64(stepsPerRev)
-
-		// X advances linearly with each revolution (moves in -X direction).
-		x := startX - revsCompleted*crankPitchMm
-
-		// Circle in YZ plane.
-		y := center.Y + crankRadiusMm*math.Cos(angle)
-		z := center.Z + crankRadiusMm*math.Sin(angle)
-
-		stepPose := spatialmath.NewPose(
-			r3.Vector{X: x, Y: y, Z: z},
-			crankOrientation,
-		)
-
-		sp := stepPose.Point()
-		sov := stepPose.Orientation().OrientationVectorDegrees()
-		r.logger.Infof("Crank step %d goal: X=%.3f Y=%.3f Z=%.3f OX=%.4f OY=%.4f OZ=%.4f Theta=%.4f",
-			step, sp.X, sp.Y, sp.Z, sov.OX, sov.OY, sov.OZ, sov.Theta)
-
-		if err := r.moveLinear(ctx, "peeling-gripper", stepPose, nil); err != nil {
-			return fmt.Errorf("crank step %d: %w", step, err)
-		}
-
-		// Log progress each revolution.
-		if step > 0 && step%stepsPerRev == 0 {
-			rev := step / stepsPerRev
-			r.logger.Infof("Crank revolution %d/%d complete", rev, crankRevolutions)
-		}
+		along := axis.Mul(revsCompleted * crankPitchMm)
+		circle := u.Mul(crankRadiusMm * math.Cos(angle)).Add(w.Mul(crankRadiusMm * math.Sin(angle)))
+		return spatialmath.NewPose(center.Add(along).Add(circle), crankOrientation)
 	}
 
-	// Release crank handle.
-	if err := r.peelingGripper.Open(ctx, nil); err != nil {
-		r.logger.Warnf("Failed to release crank handle: %v", err)
+	// Build the waypoints list: steps 1..totalSteps-2 as intermediate waypoints,
+	// step totalSteps-1 as the Destination. All are batched into one Move call so
+	// the motion service plans and executes the spiral as a single smooth motion.
+	wpList := make([]interface{}, 0, totalSteps-2)
+	for step := 1; step < totalSteps-1; step++ {
+		pif := referenceframe.NewPoseInFrame("world", poseAtStep(step))
+		wpState := armplanning.NewPlanState(
+			referenceframe.FrameSystemPoses{"peeling-gripper": pif},
+			nil,
+		)
+		wpList = append(wpList, wpState.Serialize())
+	}
+
+	finalPIF := referenceframe.NewPoseInFrame("world", poseAtStep(totalSteps-1))
+
+	constraints := motionplan.NewConstraints(
+		[]motionplan.LinearConstraint{{
+			LineToleranceMm:          1.0,
+			OrientationToleranceDegs: 2.0,
+		}},
+		nil, nil, nil,
+	)
+
+	r.logger.Infof("Executing crank spiral: %d waypoints + destination in single motion call", len(wpList))
+	if _, err := r.motion.Move(ctx, motion.MoveReq{
+		ComponentName: "peeling-gripper",
+		Destination:   finalPIF,
+		Constraints:   constraints,
+		Extra: map[string]interface{}{
+			"waypoints": wpList,
+		},
+	}); err != nil {
+		return fmt.Errorf("crank spiral: %w", err)
 	}
 
 	r.logger.Info("Cranking complete")
