@@ -219,6 +219,19 @@ func poseAbove(base spatialmath.Pose, offsetMm float64) spatialmath.Pose {
 	)
 }
 
+// LastDetection returns the most recent detection result from the camera pipeline.
+func (r *Robot) LastDetection() *applepose.DetectionResult {
+	if r.state == nil {
+		return nil
+	}
+	return r.state.LastDetection
+}
+
+// PrimaryCam returns the primary depth camera.
+func (r *Robot) PrimaryCam() camera.Camera {
+	return r.primaryCam
+}
+
 // resetState clears all peeling state for the next cycle.
 func (r *Robot) resetState() {
 	r.state = &PeelingState{

@@ -9,6 +9,27 @@ import (
 	"go.viam.com/rdk/spatialmath"
 )
 
+// Retract presses the release lever, retracts spikes, and returns the secondary arm
+// to its viewing position. Unlike ResetMachine, it does not handle the core.
+func Retract(ctx context.Context, r *Robot) error {
+	if err := pressReleaseLever(ctx, r); err != nil {
+		r.logger.Warnf("Release lever: %v", err)
+	}
+
+	if err := retractSpikes(ctx, r); err != nil {
+		r.logger.Warnf("Spike retraction: %v", err)
+	}
+
+	if SecondaryReleaseLeverApproach != nil {
+		if err := returnSecondaryArm(ctx, r); err != nil {
+			r.logger.Warnf("Secondary arm return: %v", err)
+		}
+	}
+
+	r.logger.Info("Retract complete")
+	return nil
+}
+
 // RemoveApple grasps the peeled apple from the peeler and deposits it in the peeled apple bowl.
 func RemoveApple(ctx context.Context, r *Robot) error {
 	if PeelerCorePose == nil {
