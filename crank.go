@@ -18,7 +18,7 @@ const (
 )
 
 // Crank drives the peeling arm through a spiral path to peel the apple.
-// The spiral has an 80mm radius, 14mm pitch per revolution, for 25 revolutions.
+// The spiral has a 59.5mm radius, 6mm pitch per revolution, for 23 revolutions.
 // Each step is approximately 1mm of arc length for smooth motion.
 func Crank(ctx context.Context, r *Robot) error {
 	if r.peelingArm == nil {
@@ -83,9 +83,7 @@ func Crank(ctx context.Context, r *Robot) error {
 			crankOrientation,
 		)
 
-		// Use arm.MoveToPosition for each step — avoids motion planning overhead
-		// for predetermined 1mm incremental steps.
-		if err := r.peelingArm.MoveToPosition(ctx, stepPose, nil); err != nil {
+		if err := r.moveLinear(ctx, "peeling-arm", stepPose, nil); err != nil {
 			return fmt.Errorf("crank step %d: %w", step, err)
 		}
 

@@ -4,6 +4,78 @@ Autonomous apple peeling robot. Connects to a Viam robot over WebRTC, runs a
 loop that detects apples in a bowl, grasps them, identifies stem/calyx
 features, peels them on a mechanical peeler, and resets for the next apple.
 
+## CLI
+
+Run individual pipeline stages for testing and development:
+
+```sh
+go run ./cli -creds /path/to/creds.json -step <step>
+```
+
+Available steps:
+
+| Step       | Description                                                             |
+|------------|-------------------------------------------------------------------------|
+| `watch`    | Move to viewing position, detect bowl, print apple positions, visualize |
+| `grasp`    | Multi-angle scan, select apple, attempt grasp                           |
+| `identify` | Detect stem/calyx features, regrasp if needed                           |
+| `peel`     | Orient apple and place on peeler spikes                                 |
+| `crank`    | Drive the peeling spiral                                                |
+| `remove`   | Pull peeled apple off core and deposit                                  |
+| `reset`    | Full machine reset (core removal, lever, retract, deposit)              |
+| `retract`  | Press lever, retract spikes, return secondary arm (no core handling)    |
+
+The `watch` step prints each detected apple's center position, radius, and
+visibility percentage, then visualizes the point cloud and fitted spheres in
+[motion-tools](https://github.com/viam-labs/motion-tools). If motion-tools is
+not running, visualization is skipped gracefully.
+
+## Credentials
+
+Both the autonomous loop and the CLI require a `-creds` flag pointing to a JSON
+file with the robot's connection details:
+
+```json
+{
+  "address": "robot-main.abcdef1234.viam.cloud",
+  "entity_id": "abcdef12-3456-7890-abcd-ef1234567890",
+  "api_key": "your-api-key-here"
+}
+```
+
+| Field       | Description                                               |
+|-------------|-----------------------------------------------------------|
+| `address`   | Robot address from the Viam app (Connect tab)             |
+| `entity_id` | API key entity ID (the UUID shown when creating the key)  |
+| `api_key`   | API key secret                                            |
+
+Credential files are gitignored (`creds.json`, `*-creds.json`).
+
+## Building
+
+```sh
+go build .           # library (type-checks the package)
+go build ./main/     # autonomous loop binary
+go build ./cli/      # step-by-step CLI
+go vet ./...         # lint
+```
+
+Requires Go 1.25+ and the Viam RDK checked out alongside this repo (used via
+`replace` directive in `go.mod`):
+
+```
+replace go.viam.com/rdk => ../rdk
+```
+
+## Running the Autonomous Loop
+
+```sh
+go run ./main -creds /path/to/creds.json
+```
+
+Connects to the robot and runs the full Watch-to-Reset cycle in a loop until
+interrupted with Ctrl-C.
+
 ## Hardware
 
 All components are required by `NewRobot` and must be configured in the Viam
@@ -65,15 +137,13 @@ the jaws, pushes onto the spikes, releases the gripper, and retreats.
 
 ### Crank
 
-Drives the peeling arm through a spiral path:
+Drives the peeling arm through a spiral path using the motion service with
+linear constraints for each 1 mm step:
 
 - Radius: 59.5 mm
 - Pitch: 6 mm per revolution in -X
 - Revolutions: 23
 - Step size: ~1 mm arc length (~374 steps/rev, ~8,579 total)
-
-Uses `arm.MoveToPosition` directly for each step to avoid motion planning
-overhead.
 
 ### RemoveApple
 
@@ -92,6 +162,17 @@ linearly, moves to the peeled apple bowl, and releases.
 
 There is also a standalone `Retract` function that runs only steps 2-4 (lever,
 spikes, secondary arm return) without touching the core.
+
+## Motion Helpers
+
+All arm movement goes through three helpers on `Robot`:
+
+- **`moveLinear`** -- `motion.Move` with a 1 mm / 2 deg linear constraint. Used
+  for precise paths (descending to apple, pushing onto spikes, crank steps).
+- **`moveFree`** -- `motion.Move` with no path constraints. Used for
+  repositioning between stations.
+- **`moveToJoints`** -- `motion.Move` with a joint-space goal. Used for
+  recorded positions. Returns an error on nil joints (stub guard).
 
 ## File Layout
 
@@ -126,78 +207,6 @@ apple_pose/             Apple detection library (see below)
 
 cmd/record_positions/   Read current arm joint positions from the live robot
 ```
-
-## Prerequisites
-
-- Go 1.25+
-- Viam RDK checked out alongside this repo (used via `replace` directive):
-  ```
-  replace go.viam.com/rdk => ../rdk
-  ```
-- A Viam robot credentials file (JSON):
-  ```json
-  {
-    "address": "robot-address.viam.cloud",
-    "entity_id": "...",
-    "api_key": "..."
-  }
-  ```
-
-## Building
-
-```sh
-go build .           # library (type-checks the package)
-go build ./main/     # autonomous loop binary
-go build ./cli/      # step-by-step CLI
-go vet ./...         # lint
-```
-
-## Running the Autonomous Loop
-
-```sh
-go run ./main -creds /path/to/creds.json
-```
-
-Connects to the robot and runs the full Watch-to-Reset cycle in a loop until
-interrupted with Ctrl-C.
-
-## CLI
-
-Run individual pipeline stages for testing and development:
-
-```sh
-go run ./cli -creds /path/to/creds.json -step <step>
-```
-
-Available steps:
-
-| Step       | Description                                                             |
-|------------|-------------------------------------------------------------------------|
-| `watch`    | Move to viewing position, detect bowl, print apple positions, visualize |
-| `grasp`    | Multi-angle scan, select apple, attempt grasp                           |
-| `identify` | Detect stem/calyx features, regrasp if needed                           |
-| `peel`     | Orient apple and place on peeler spikes                                 |
-| `crank`    | Drive the peeling spiral                                                |
-| `remove`   | Pull peeled apple off core and deposit                                  |
-| `reset`    | Full machine reset (core removal, lever, retract, deposit)              |
-| `retract`  | Press lever, retract spikes, return secondary arm (no core handling)    |
-
-The `watch` step prints each detected apple's center position, radius, and
-visibility percentage, then visualizes the point cloud and fitted spheres in
-[motion-tools](https://github.com/viam-labs/motion-tools). If motion-tools is
-not running, visualization is skipped gracefully.
-
-## Recording Positions
-
-Use the position recording utility to capture current arm joint angles from the
-live robot. Manually move the arms to the desired positions first, then run:
-
-```sh
-go run ./cmd/record_positions -creds /path/to/creds.json
-```
-
-This prints joint values in `[]referenceframe.Input{...}` format ready to paste
-into `positions.go`.
 
 ## Apple Pose Detection Library
 
@@ -275,19 +284,17 @@ go run ./apple_pose/cmd/test_apples -creds /path/to/creds.json
 This saves a point cloud to `apple_pose/testdata/applecam.pcd`, which
 `TestDetect_RealData` will pick up on subsequent test runs.
 
-## Motion Helpers
+## Recording Positions
 
-All arm movement goes through three helpers on `Robot`:
+Use the position recording utility to capture current arm joint angles from the
+live robot. Manually move the arms to the desired positions first, then run:
 
-- **`moveLinear`** -- `motion.Move` with a 1 mm / 2 deg linear constraint. Used
-  for precise paths (descending to apple, pushing onto spikes).
-- **`moveFree`** -- `motion.Move` with no path constraints. Used for
-  repositioning between stations.
-- **`moveToJoints`** -- `motion.Move` with a joint-space goal. Used for
-  recorded positions. Returns an error on nil joints (stub guard).
+```sh
+go run ./cmd/record_positions -creds /path/to/creds.json
+```
 
-The crank routine bypasses the motion service and calls `arm.MoveToPosition`
-directly for each 1 mm step to avoid planning overhead.
+This prints joint values in `[]referenceframe.Input{...}` format ready to paste
+into `positions.go`.
 
 ## Stub Strategy
 
