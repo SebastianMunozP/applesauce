@@ -34,39 +34,44 @@ func Retract(ctx context.Context, r *Robot) error {
 }
 
 // RemoveApple grasps the peeled apple from the peeler and deposits it in the peeled apple bowl.
+// The gripper opens, moves 150mm above the grab pose, descends linearly to the grab pose,
+// grasps the apple, then pulls it off by moving 300mm in -X.
 func RemoveApple(ctx context.Context, r *Robot) error {
-	if PeelerCorePose == nil {
-		r.logger.Warn("PeelerCorePose not configured (stub); skipping apple removal")
-		return nil
-	}
-	if PeeledAppleBowlPose == nil {
-		r.logger.Warn("PeeledAppleBowlPose not configured (stub); skipping apple removal")
+	if PeelerAppleGrabPose == nil {
+		r.logger.Warn("PeelerAppleGrabPose not configured (stub); skipping apple removal")
 		return nil
 	}
 
-	corePoint := PeelerCorePose.Point()
+	grabPoint := PeelerAppleGrabPose.Point()
+	grabOrientation := PeelerAppleGrabPose.Orientation()
 
-	// Approach the peeled apple with gripper pointing in +X (toward the peeler).
-	approachOrientation := &spatialmath.OrientationVectorDegrees{OX: 1, Theta: 0}
-	approachPose := spatialmath.NewPose(
-		r3.Vector{X: corePoint.X - 100, Y: corePoint.Y, Z: corePoint.Z},
-		approachOrientation,
-	)
-
-	r.logger.Info("Approaching peeled apple")
-	if err := r.moveFree(ctx, "xarm7", approachPose, nil); err != nil {
-		return fmt.Errorf("move to apple approach: %w", err)
+	// Allow arm-table collisions during linear moves near the peeler.
+	armTableCollision := motionplan.CollisionSpecification{
+		Allows: []motionplan.CollisionSpecificationAllowedFrameCollisions{
+			//~ {Frame1: "xarm7", Frame2: "table"},
+		},
 	}
 
-	// Open gripper.
+	// Open gripper before approaching.
+	r.logger.Info("Opening gripper for apple removal")
 	if err := r.appleGripper.Open(ctx, nil); err != nil {
 		return fmt.Errorf("open gripper for apple removal: %w", err)
 	}
 
-	// Linear approach to the apple on the core.
-	corePose := spatialmath.NewPose(corePoint, approachOrientation)
-	if err := r.moveLinear(ctx, "xarm7", corePose, nil); err != nil {
-		return fmt.Errorf("approach peeled apple: %w", err)
+	// Move 150mm above the grab pose.
+	abovePose := spatialmath.NewPose(
+		r3.Vector{X: grabPoint.X, Y: grabPoint.Y, Z: grabPoint.Z + 150},
+		grabOrientation,
+	)
+	r.logger.Info("Moving above peeled apple")
+	if err := r.moveFree(ctx, "xarm7", abovePose, nil); err != nil {
+		return fmt.Errorf("move above apple grab pose: %w", err)
+	}
+
+	// Linear descent to the grab pose.
+	r.logger.Info("Descending to peeled apple")
+	if err := r.moveLinear(ctx, "xarm7", PeelerAppleGrabPose, nil, 8, armTableCollision); err != nil {
+		return fmt.Errorf("descend to apple grab pose: %w", err)
 	}
 
 	// Grab the apple.
@@ -74,28 +79,29 @@ func RemoveApple(ctx context.Context, r *Robot) error {
 		return fmt.Errorf("grab peeled apple: %w", err)
 	}
 
-	// Pull apple off the core by moving linearly in -X.
+	// Pull apple off by moving linearly 300mm in -X.
 	pullPose := spatialmath.NewPose(
-		r3.Vector{X: corePoint.X - 150, Y: corePoint.Y, Z: corePoint.Z},
-		approachOrientation,
+		r3.Vector{X: grabPoint.X - 300, Y: grabPoint.Y, Z: grabPoint.Z},
+		grabOrientation,
 	)
-	r.logger.Info("Pulling apple off core")
-	if err := r.moveLinear(ctx, "xarm7", pullPose, nil); err != nil {
-		return fmt.Errorf("pull apple off core: %w", err)
+	r.logger.Info("Pulling apple off peeler")
+	if err := r.moveLinear(ctx, "xarm7", pullPose, nil, 1, armTableCollision); err != nil {
+		return fmt.Errorf("pull apple off peeler: %w", err)
 	}
 
 	// Move to peeled apple bowl and release.
-	r.logger.Info("Depositing peeled apple")
-	aboveBowl := poseAbove(PeeledAppleBowlPose, 100)
-	if err := r.moveFree(ctx, "xarm7", aboveBowl, nil); err != nil {
-		return fmt.Errorf("move to peeled apple bowl: %w", err)
+	if PeeledAppleBowlPose != nil {
+		r.logger.Info("Depositing peeled apple")
+		if err := r.moveFree(ctx, "xarm7", PeeledAppleBowlPose, nil); err != nil {
+			return fmt.Errorf("move to peeled apple bowl: %w", err)
+		}
 	}
 
 	if err := r.appleGripper.Open(ctx, nil); err != nil {
 		return fmt.Errorf("release peeled apple: %w", err)
 	}
 
-	r.logger.Info("Peeled apple deposited")
+	r.logger.Info("Peeled apple removed")
 	return nil
 }
 
@@ -147,7 +153,7 @@ func grabCore(ctx context.Context, r *Robot) error {
 	}
 
 	corePose := spatialmath.NewPose(corePoint, approachOrientation)
-	if err := r.moveLinear(ctx, "xarm7", corePose, nil); err != nil {
+	if err := r.moveLinear(ctx, "xarm7", corePose, nil, 1); err != nil {
 		return fmt.Errorf("reach core: %w", err)
 	}
 

@@ -44,9 +44,13 @@ var (
 	// STUB: measure jaw position relative to world frame.
 	PeelerJawsPose spatialmath.Pose
 
-	// PeeledAppleBowlPose is the world-frame pose of the bowl/bin for peeled apples.
-	// STUB: measure peeled apple deposit location.
-	PeeledAppleBowlPose spatialmath.Pose
+	// PeeledAppleBowlPose is the world-frame pose above the bowl/bin for peeled apples.
+	// The arm moves directly here and opens the gripper to drop.
+	// Recorded 2026-02-25.
+	PeeledAppleBowlPose spatialmath.Pose = spatialmath.NewPose(
+		r3.Vector{X: -650.867109, Y: 118.290116, Z: 1073.602847},
+		&spatialmath.OrientationVectorDegrees{OX: -0.020939, OY: -0.121366, OZ: -0.992387, Theta: -30.325381},
+	)
 
 	// WasteBinPose is the world-frame pose of the waste bin for cores/scraps.
 	// STUB: measure waste bin location.
@@ -68,8 +72,20 @@ var (
 
 	// PeelerCorePose is the world-frame pose of the apple core on the peeler
 	// after peeling is complete (where to grab it from).
-	// STUB: measure the cored apple location on peeler.
-	PeelerCorePose spatialmath.Pose
+	// Recorded 2026-02-25.
+	PeelerCorePose spatialmath.Pose = spatialmath.NewPose(
+		r3.Vector{X: 97.651240, Y: 433.337759, Z: 1199.124982},
+		&spatialmath.OrientationVectorDegrees{OX: 0.997678, OY: 0.023451, OZ: -0.063949, Theta: 26.266296},
+	)
+
+	// PeelerAppleGrabPose is the world-frame pose where the primary arm
+	// can grab the peeled apple off the peeler. The gripper descends from
+	// above (+Z) and then pulls the apple off in -X.
+	// Recorded 2026-02-25.
+	PeelerAppleGrabPose spatialmath.Pose = spatialmath.NewPose(
+		r3.Vector{X: 223.472639, Y: 467.593875, Z: 1211.834733},
+		&spatialmath.OrientationVectorDegrees{OX: -0.114097, OY: 0.046392, OZ: -0.992386, Theta: 136.576857},
+	)
 
 	// PeelerSpikeRetractPose is the position the peeling arm moves to
 	// in order to fully retract the spikes from the core. Recorded 2026-02-25.

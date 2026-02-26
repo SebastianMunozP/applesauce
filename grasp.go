@@ -71,7 +71,7 @@ func Grasp(ctx context.Context, r *Robot) error {
 			r3.Vector{X: appleCenter.X, Y: appleCenter.Y, Z: appleCenter.Z + graspFinalOffsetMm},
 			downOrientation,
 		)
-		if err := r.moveLinear(ctx, "xarm7", graspPose, worldState); err != nil {
+		if err := r.moveLinear(ctx, "xarm7", graspPose, worldState, 1); err != nil {
 			r.logger.Warnf("Failed linear descent: %v", err)
 			continue
 		}
@@ -84,7 +84,7 @@ func Grasp(ctx context.Context, r *Robot) error {
 		}
 
 		// Retreat upward.
-		if err := r.moveLinear(ctx, "xarm7", approachPose, nil); err != nil {
+		if err := r.moveLinear(ctx, "xarm7", approachPose, nil, 1); err != nil {
 			r.logger.Warnf("Failed to retreat: %v", err)
 		}
 

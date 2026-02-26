@@ -91,7 +91,7 @@ func buildSpiralReq(gp r3.Vector, crankOrientation spatialmath.Orientation) moti
 	u := ref.Sub(axis.Mul(axis.Dot(ref))).Normalize()
 	w := axis.Cross(u)
 
-	center := gp.Add(r3.Vector{0, 0, 59.5})
+	center := gp.Add(r3.Vector{X: 0, Y: 0, Z: 59.5})
 	offset := gp.Sub(center)
 	startAngle := math.Atan2(offset.Dot(w), offset.Dot(u))
 

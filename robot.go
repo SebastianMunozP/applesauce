@@ -116,14 +116,14 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	// Primary arm (xarm7) — required.
 	primaryArm, err := arm.FromProvider(machine, "xarm7")
 	if err != nil {
-		//~ return nil, fmt.Errorf("primary arm (xarm7): %w", err)
+		return nil, fmt.Errorf("primary arm (xarm7): %w", err)
 	}
 	r.primaryArm = primaryArm
 
 	// Secondary arm — required.
 	secondaryArm, err := arm.FromProvider(machine, "secondary-arm")
 	if err != nil {
-		//~ return nil, fmt.Errorf("secondary arm: %w", err)
+		return nil, fmt.Errorf("secondary arm: %w", err)
 	}
 	r.secondaryArm = secondaryArm
 
@@ -135,9 +135,9 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	r.peelingArm = peelingArm
 
 	// Apple gripper — required.
-	appleGripper, err := gripper.FromProvider(machine, "arm_mount")
+	appleGripper, err := gripper.FromProvider(machine, "applegripper")
 	if err != nil {
-		//~ return nil, fmt.Errorf("apple gripper (arm_mount): %w", err)
+		return nil, fmt.Errorf("apple gripper (applegripper): %w", err)
 	}
 	r.appleGripper = appleGripper
 
@@ -151,14 +151,14 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	// Primary camera — required.
 	primaryCam, err := camera.FromProvider(machine, "primary-cam")
 	if err != nil {
-		//~ return nil, fmt.Errorf("primary camera: %w", err)
+		return nil, fmt.Errorf("primary camera: %w", err)
 	}
 	r.primaryCam = primaryCam
 
 	// Secondary camera — required.
 	secondaryCam, err := camera.FromProvider(machine, "secondary-cam")
 	if err != nil {
-		//~ return nil, fmt.Errorf("secondary camera: %w", err)
+		return nil, fmt.Errorf("secondary camera: %w", err)
 	}
 	r.secondaryCam = secondaryCam
 
@@ -176,14 +176,15 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 }
 
 // moveLinear moves a component to the destination pose using a linear constraint.
-// The path will stay within 1mm of a straight line and 2 degrees of orientation.
-func (r *Robot) moveLinear(ctx context.Context, componentName string, dest spatialmath.Pose, worldState *referenceframe.WorldState) error {
+// The path will stay within lineToleranceMm of a straight line and 2 degrees of orientation.
+// An optional collSpecs parameter allows specific frame pairs to ignore collisions.
+func (r *Robot) moveLinear(ctx context.Context, componentName string, dest spatialmath.Pose, worldState *referenceframe.WorldState, lineToleranceMm float64, collSpecs ...motionplan.CollisionSpecification) error {
 	constraints := motionplan.NewConstraints(
 		[]motionplan.LinearConstraint{{
-			LineToleranceMm:          1.0,
-			OrientationToleranceDegs: 2.0,
+			LineToleranceMm:          lineToleranceMm,
+			OrientationToleranceDegs: 3.0,
 		}},
-		nil, nil, nil,
+		nil, nil, collSpecs,
 	)
 
 	_, err := r.motion.Move(ctx, motion.MoveReq{
@@ -191,6 +192,9 @@ func (r *Robot) moveLinear(ctx context.Context, componentName string, dest spati
 		Destination:   referenceframe.NewPoseInFrame("world", dest),
 		WorldState:    worldState,
 		Constraints:   constraints,
+		Extra: map[string]interface{}{
+			"lock_nonmoving_joints": true,
+		},
 	})
 	return err
 }
@@ -202,6 +206,9 @@ func (r *Robot) moveFree(ctx context.Context, componentName string, dest spatial
 		ComponentName: componentName,
 		Destination:   referenceframe.NewPoseInFrame("world", dest),
 		WorldState:    worldState,
+		Extra: map[string]interface{}{
+			"lock_nonmoving_joints": true,
+		},
 	})
 	return err
 }
@@ -243,6 +250,7 @@ func (r *Robot) moveToJoints(ctx context.Context, componentName string, joints [
 	ret, err := r.motion.Move(ctx, motion.MoveReq{
 		ComponentName: componentName,
 		Extra: map[string]interface{}{
+			"lock_nonmoving_joints": true,
 			"goal_state": map[string]interface{}{
 				"configuration": configuration,
 			},
@@ -371,6 +379,9 @@ func (r *Robot) cachedLinearMove(ctx context.Context, componentName string, dest
 				}},
 				nil, nil, nil,
 			),
+			Extra: map[string]interface{}{
+				"lock_nonmoving_joints": true,
+			},
 		}
 		planned, err := r.doPlan(ctx, req)
 		if err != nil {
