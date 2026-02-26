@@ -171,27 +171,54 @@ func pressReleaseLever(ctx context.Context, r *Robot) error {
 	aboveApproach := poseAbove(SecondaryReleaseLeverApproach, 200)
 
 	r.logger.Info("Moving above lever approach")
+	before, err := r.secondaryArmJoints(ctx)
+	if err != nil {
+		return err
+	}
 	if err := r.moveFree(ctx, "secondary-arm", aboveApproach, nil); err != nil {
 		return fmt.Errorf("move above lever approach: %w", err)
 	}
+	if err := r.confirmSecondaryArmMoved(ctx, before); err != nil {
+		return fmt.Errorf("move above lever approach: %w", err)
+	}
 
+	before, err = r.secondaryArmJoints(ctx)
+	if err != nil {
+		return err
+	}
 	if err := r.cachedLinearMove(ctx, "secondary-arm", SecondaryReleaseLeverApproach,
 		&r.leverDescentTrajectory, "lever_descent.json"); err != nil {
+		return fmt.Errorf("descend to lever: %w", err)
+	}
+	if err := r.confirmSecondaryArmMoved(ctx, before); err != nil {
 		return fmt.Errorf("descend to lever: %w", err)
 	}
 
 	if SecondaryReleaseLeverPressPose == nil {
 		r.logger.Warn("SecondaryReleaseLeverPressPose not configured (stub); lever press simulated")
+		before, err = r.secondaryArmJoints(ctx)
+		if err != nil {
+			return err
+		}
 		if err := r.cachedLinearMove(ctx, "secondary-arm", aboveApproach,
 			&r.leverRetractTrajectory, "lever_retract.json"); err != nil {
+			r.logger.Warnf("retract from lever approach: %v", err)
+		} else if err := r.confirmSecondaryArmMoved(ctx, before); err != nil {
 			r.logger.Warnf("retract from lever approach: %v", err)
 		}
 		return nil
 	}
 
 	r.logger.Info("Pressing release lever")
+	before, err = r.secondaryArmJoints(ctx)
+	if err != nil {
+		return err
+	}
 	if err := r.cachedLinearMove(ctx, "secondary-arm", SecondaryReleaseLeverPressPose,
 		&r.leverPressTrajectory, "lever_press.json"); err != nil {
+		return fmt.Errorf("press lever: %w", err)
+	}
+	if err := r.confirmSecondaryArmMoved(ctx, before); err != nil {
 		return fmt.Errorf("press lever: %w", err)
 	}
 
@@ -199,13 +226,27 @@ func pressReleaseLever(ctx context.Context, r *Robot) error {
 		r.logger.Warnf("Spike retraction: %v", err)
 	}
 
+	before, err = r.secondaryArmJoints(ctx)
+	if err != nil {
+		return err
+	}
 	if err := r.cachedLinearMove(ctx, "secondary-arm", SecondaryReleaseLeverApproach,
 		&r.leverReleaseTrajectory, "lever_release.json"); err != nil {
 		return fmt.Errorf("release lever: %w", err)
 	}
+	if err := r.confirmSecondaryArmMoved(ctx, before); err != nil {
+		return fmt.Errorf("release lever: %w", err)
+	}
 
+	before, err = r.secondaryArmJoints(ctx)
+	if err != nil {
+		return err
+	}
 	if err := r.cachedLinearMove(ctx, "secondary-arm", aboveApproach,
 		&r.leverRetractTrajectory, "lever_retract.json"); err != nil {
+		return fmt.Errorf("retract from lever: %w", err)
+	}
+	if err := r.confirmSecondaryArmMoved(ctx, before); err != nil {
 		return fmt.Errorf("retract from lever: %w", err)
 	}
 
@@ -283,7 +324,10 @@ func returnSecondaryArm(ctx context.Context, r *Robot) error {
 	}
 
 	r.logger.Info("Returning secondary arm to viewing position")
-	return r.moveToJoints(ctx, "secondary-arm", SecondaryViewingJoints)
+	if err := r.moveToJoints(ctx, "secondary-arm", SecondaryViewingJoints); err != nil {
+		return err
+	}
+	return r.confirmSecondaryArmAt(ctx, SecondaryViewingJoints)
 }
 
 // depositCoreAndReturn moves the primary arm to the waste bin, drops the core,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 
@@ -250,6 +251,54 @@ func (r *Robot) moveToJoints(ctx context.Context, componentName string, joints [
 	fmt.Println(ret)
 	fmt.Println(err)
 	return err
+}
+
+// secondaryArmJointTolerance is the maximum acceptable joint deviation (radians)
+// when verifying the secondary arm reached its target (~0.6 degrees).
+const secondaryArmJointTolerance = 0.01
+
+// secondaryArmJoints reads the secondary arm's current joint positions.
+func (r *Robot) secondaryArmJoints(ctx context.Context) ([]referenceframe.Input, error) {
+	inputs, err := r.secondaryArm.CurrentInputs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read secondary arm joints: %w", err)
+	}
+	return inputs, nil
+}
+
+// confirmSecondaryArmAt verifies the secondary arm reached the expected joint positions.
+func (r *Robot) confirmSecondaryArmAt(ctx context.Context, expected []referenceframe.Input) error {
+	actual, err := r.secondaryArmJoints(ctx)
+	if err != nil {
+		return err
+	}
+	if len(actual) != len(expected) {
+		return fmt.Errorf("secondary arm joint count mismatch: got %d, want %d", len(actual), len(expected))
+	}
+	for i := range expected {
+		if math.Abs(actual[i]-expected[i]) > secondaryArmJointTolerance {
+			return fmt.Errorf("secondary arm joint %d off target (got %.4f, want %.4f rad)", i, actual[i], expected[i])
+		}
+	}
+	return nil
+}
+
+// confirmSecondaryArmMoved verifies the secondary arm actually moved by comparing
+// current joints against a pre-move snapshot. Returns an error if all joints are unchanged.
+func (r *Robot) confirmSecondaryArmMoved(ctx context.Context, before []referenceframe.Input) error {
+	after, err := r.secondaryArmJoints(ctx)
+	if err != nil {
+		return err
+	}
+	for i := range before {
+		if i >= len(after) {
+			break
+		}
+		if math.Abs(after[i]-before[i]) > secondaryArmJointTolerance {
+			return nil // at least one joint moved
+		}
+	}
+	return fmt.Errorf("secondary arm did not move: all joints unchanged after motion command")
 }
 
 // doPlan calls the motion service's DoPlan DoCommand to generate a trajectory

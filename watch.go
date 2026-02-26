@@ -20,6 +20,9 @@ func Watch(ctx context.Context, r *Robot) error {
 		if err := r.moveToJoints(ctx, "secondary-arm", SecondaryViewingJoints); err != nil {
 			return err
 		}
+		if err := r.confirmSecondaryArmAt(ctx, SecondaryViewingJoints); err != nil {
+			return err
+		}
 	} else {
 		r.logger.Warn("SecondaryViewingJoints not recorded; skipping secondary arm positioning")
 	}
