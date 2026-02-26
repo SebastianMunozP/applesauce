@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,6 +13,7 @@ import (
 	"github.com/biotinker/applesauce"
 	applepose "github.com/biotinker/applesauce/apple_pose"
 	"github.com/biotinker/applesauce/internal/creds"
+	"github.com/golang/geo/r3"
 
 	vizClient "github.com/viam-labs/motion-tools/client/client"
 	"go.viam.com/rdk/logging"
@@ -162,6 +164,75 @@ func visualize(logger logging.Logger, cloud pointcloud.PointCloud, result *apple
 	}
 	time.Sleep(vizDelay)
 	logger.Infof("viz: drew pointcloud (%d points)", cloud.Size())
+
+	// Draw support plane as a flat box.
+	if result.Bowl.SupportPlane != nil {
+		plane := result.Bowl.SupportPlane
+		center := plane.Center()
+		normal := plane.Normal()
+		norm := normal.Norm()
+		if norm > 1e-9 {
+			normal = normal.Mul(1.0 / norm)
+		}
+
+		// Compute two orthonormal tangent vectors in the plane.
+		var t1 r3.Vector
+		if math.Abs(normal.X) < 0.9 {
+			t1 = normal.Cross(r3.Vector{X: 1, Y: 0, Z: 0})
+		} else {
+			t1 = normal.Cross(r3.Vector{X: 0, Y: 1, Z: 0})
+		}
+		t1 = t1.Mul(1.0 / t1.Norm())
+		t2 := normal.Cross(t1)
+
+		// Measure extent of plane points along tangent directions.
+		planeCloud, err := plane.PointCloud()
+		if err == nil && planeCloud != nil && planeCloud.Size() > 0 {
+			var minT1, maxT1, minT2, maxT2 float64
+			first := true
+			planeCloud.Iterate(0, 0, func(pt r3.Vector, d pointcloud.Data) bool {
+				rel := pt.Sub(center)
+				p1 := rel.Dot(t1)
+				p2 := rel.Dot(t2)
+				if first {
+					minT1, maxT1 = p1, p1
+					minT2, maxT2 = p2, p2
+					first = false
+				} else {
+					if p1 < minT1 {
+						minT1 = p1
+					}
+					if p1 > maxT1 {
+						maxT1 = p1
+					}
+					if p2 < minT2 {
+						minT2 = p2
+					}
+					if p2 > maxT2 {
+						maxT2 = p2
+					}
+				}
+				return true
+			})
+
+			width := maxT1 - minT1
+			height := maxT2 - minT2
+			thickness := 1.0
+
+			ov := &spatialmath.OrientationVector{OX: normal.X, OY: normal.Y, OZ: normal.Z}
+			planePose := spatialmath.NewPose(center, ov)
+			planeBox, err := spatialmath.NewBox(planePose, r3.Vector{X: width, Y: height, Z: thickness}, "support_plane")
+			if err == nil {
+				if err := vizClient.DrawGeometry(planeBox, "gray"); err != nil {
+					logger.Warnf("viz: could not draw support plane: %v", err)
+				} else {
+					logger.Infof("viz: drew support plane (%.0f x %.0f mm) at (%.1f, %.1f, %.1f)",
+						width, height, center.X, center.Y, center.Z)
+				}
+				time.Sleep(vizDelay)
+			}
+		}
+	}
 
 	for i, apple := range result.Bowl.Apples {
 		center := apple.Pose.Point()

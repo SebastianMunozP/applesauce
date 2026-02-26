@@ -57,6 +57,11 @@ func (d *Detector) Detect(ctx context.Context, cloud pointcloud.PointCloud) (*De
 		}
 
 		for _, sr := range spheres {
+			// Reject spheres whose center is below the table plane.
+			if !isAbovePlane(sr.Center, scene.plane, d.cfg.Scene.GroundNormal) {
+				continue
+			}
+
 			allSphereResults = append(allSphereResults, sr)
 
 			features := detectStemCalyx(
@@ -424,4 +429,25 @@ func planeNormal(plane pointcloud.Plane) r3.Vector {
 		return r3.Vector{Z: 1}
 	}
 	return n.Mul(1.0 / norm)
+}
+
+// isAbovePlane returns true if the point is above (or on) the plane, where "above"
+// is defined as the side in the direction of groundNormal.
+func isAbovePlane(pt r3.Vector, plane pointcloud.Plane, groundNormal r3.Vector) bool {
+	if plane == nil {
+		return true
+	}
+	eq := plane.Equation()
+	normal := r3.Vector{X: eq[0], Y: eq[1], Z: eq[2]}
+	d := eq[3]
+
+	// Ensure the normal points in the same direction as groundNormal (i.e. "up").
+	if normal.Dot(groundNormal) < 0 {
+		normal = normal.Mul(-1)
+		d = -d
+	}
+
+	// Signed distance: positive = above the plane.
+	signedDist := normal.X*pt.X + normal.Y*pt.Y + normal.Z*pt.Z + d
+	return signedDist >= 0
 }
