@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 
 	"github.com/golang/geo/r3"
 
@@ -17,7 +18,7 @@ import (
 const (
 	maxGraspAttempts   = 3
 	graspApproachMm    = 200.0
-	graspFinalOffsetMm = 20.0
+	graspFinalOffsetMm = 50.0
 	obstacleSafetyMm   = 5.0
 )
 
@@ -75,7 +76,7 @@ func Grasp(ctx context.Context, r *Robot) error {
 			return err
 		}
 
-		if err := r.moveFree(ctx, r.primaryArm.Name().Name, approachPose, worldState); err != nil {
+		if err := r.moveFree(ctx, r.appleGripper.Name().Name, approachPose, worldState); err != nil {
 			r.logger.Warnf("Failed to move to approach: %v", err)
 			continue
 		}
@@ -84,6 +85,8 @@ func Grasp(ctx context.Context, r *Robot) error {
 		if err := r.appleGripper.Open(ctx, nil); err != nil {
 			return fmt.Errorf("open gripper: %w", err)
 		}
+
+		time.Sleep(5 * time.Second) // wait for gripper to finish opening
 
 		// Linear descent to just above the apple.
 		graspPose := spatialmath.NewPose(
@@ -95,26 +98,23 @@ func Grasp(ctx context.Context, r *Robot) error {
 			return err
 		}
 
-		if err := r.moveFreeForGrasp(ctx, r.primaryArm.Name().Name, graspPose, worldState); err != nil {
+		if err := r.moveFreeForGrasp(ctx, r.appleGripper.Name().Name, graspPose, worldState); err != nil {
 			r.logger.Warnf("Failed move for grasp: %v", err)
 			continue
 		}
 
 		// Grab.
-		grabbed, err := r.appleGripper.Grab(ctx, nil)
+		_, err := r.primaryArm.DoCommand(ctx, map[string]interface{}{"move_gripper": 500})
 		if err != nil {
 			r.logger.Warnf("Grab failed: %v", err)
 			continue
 		}
 
-		// Retreat upward.
-		if err := r.moveLinear(ctx, r.primaryArm.Name().Name, approachPose, nil, 1); err != nil {
-			r.logger.Warnf("Failed to retreat: %v", err)
-		}
+		time.Sleep(5 * time.Second) // wait for gripper to finish closing
 
-		if !grabbed {
-			r.logger.Warn("Gripper did not detect grasp, retrying")
-			continue
+		// Retreat upward.
+		if err := r.moveLinear(ctx, r.appleGripper.Name().Name, approachPose, nil); err != nil {
+			r.logger.Warnf("Failed to retreat: %v", err)
 		}
 
 		// Verify grasp.
