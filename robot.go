@@ -209,6 +209,13 @@ func (r *Robot) moveFree(ctx context.Context, componentName string, dest spatial
 		ComponentName: componentName,
 		Destination:   referenceframe.NewPoseInFrame("world", dest),
 		WorldState:    worldState,
+		Constraints: &motionplan.Constraints{
+			CollisionSpecification: []motionplan.CollisionSpecification{
+				{Allows: []motionplan.CollisionSpecificationAllowedFrameCollisions{
+					{Frame1: "gripper:claws", Frame2: "^obstacle_apple_.*$"},
+				}},
+			},
+		},
 	})
 	return err
 }
