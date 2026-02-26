@@ -20,6 +20,7 @@ import (
 	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/robot"
+	"go.viam.com/rdk/robot/framesystem"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/spatialmath"
 )
@@ -47,6 +48,7 @@ type Robot struct {
 
 	// Services
 	motion motion.Service
+	fsSvc  framesystem.Service
 
 	// Detection
 	detector *applepose.Detector
@@ -59,12 +61,12 @@ type Robot struct {
 	PlansDir string
 
 	// Cached trajectories — planned once via DoPlan, reused via DoExecute.
-	crankSpiralTrajectory   motionplan.Trajectory
-	crankRetractTrajectory  motionplan.Trajectory
-	leverDescentTrajectory  motionplan.Trajectory
-	leverPressTrajectory    motionplan.Trajectory
-	leverReleaseTrajectory  motionplan.Trajectory
-	leverRetractTrajectory  motionplan.Trajectory
+	crankSpiralTrajectory  motionplan.Trajectory
+	crankRetractTrajectory motionplan.Trajectory
+	leverDescentTrajectory motionplan.Trajectory
+	leverPressTrajectory   motionplan.Trajectory
+	leverReleaseTrajectory motionplan.Trajectory
+	leverRetractTrajectory motionplan.Trajectory
 }
 
 // PeelingState tracks the state of the current peeling cycle.
@@ -167,6 +169,13 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 		return nil, fmt.Errorf("motion service: %w", err)
 	}
 	r.motion = motionSvc
+
+	r.fsSvc, err = framesystem.FromProvider(machine)
+	if err != nil {
+		logger.Error(err)
+		return nil, fmt.Errorf("framesystem service: %w", err)
+	}
+	logger.Infof("Framesystem service initialized: %v", r.fsSvc)
 
 	// Apple pose detector.
 	r.detector = applepose.NewDetector(nil)
