@@ -9,16 +9,17 @@ import (
 	"github.com/golang/geo/r3"
 
 	applepose "github.com/biotinker/applesauce/apple_pose"
+	viz "github.com/viam-labs/motion-tools/client/client"
 	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/spatialmath"
 )
 
 const (
-	maxGraspAttempts  = 3
-	graspApproachMm   = 200.0
+	maxGraspAttempts   = 3
+	graspApproachMm    = 200.0
 	graspFinalOffsetMm = 20.0
-	obstacleSafetyMm  = 5.0
+	obstacleSafetyMm   = 5.0
 )
 
 // Grasp performs multi-angle scanning, selects the best apple, and attempts
@@ -65,6 +66,12 @@ func Grasp(ctx context.Context, r *Robot) error {
 			r3.Vector{X: appleCenter.X, Y: appleCenter.Y, Z: appleCenter.Z + graspApproachMm},
 			downOrientation,
 		)
+
+		approachPoseName := fmt.Sprintf("approach_pose_%d", attempt)
+		if err := viz.DrawPoses([]spatialmath.Pose{approachPose}, []string{approachPoseName}, true); err != nil {
+			return err
+		}
+
 		if err := r.moveFree(ctx, "xarm6", approachPose, worldState); err != nil {
 			r.logger.Warnf("Failed to move to approach: %v", err)
 			continue
@@ -263,68 +270,51 @@ func transformApplesToWorldFrame(ctx context.Context, r *Robot, apples []applepo
 		return fmt.Errorf("no primary camera available")
 	}
 
-	// Get the camera's pose in world frame via the robot's frame system.
-	// The frame system knows the geometric relationship between components.
-	frameSystem, err := r.machine.FrameSystemConfig(ctx)
+	// Get camera pose in world frame
+	cameraPoseInWorld, err := r.fsSvc.GetPose(ctx, r.primaryCam.Name().Name, "", nil, nil)
 	if err != nil {
-		return fmt.Errorf("get frame system: %w", err)
+		return err
 	}
 
-	// Find the camera's transform in the frame system.
-	var cameraPoseInWorld spatialmath.Pose
-	found := false
-	for _, part := range frameSystem.Parts {
-		if part.FrameConfig.Name() == "primary-cam" {
-			cameraPoseInWorld = part.FrameConfig.Pose()
-			found = true
-			r.logger.Debugf("Camera pose in world: %v", cameraPoseInWorld)
-			break
-		}
-	}
-
-	if !found {
-		return fmt.Errorf("camera frame 'primary-cam' not found in frame system")
-	}
+	// Log that I am about to transform the apple poses.
+	r.logger.Infof("got camera pose in world frame: %v", cameraPoseInWorld.Pose())
+	r.logger.Infof("Transforming %d apple poses from camera frame to world frame", len(apples))
 
 	// Transform each apple's pose from camera frame to world frame.
 	for i := range apples {
+		// Log that I am about to transform the apple pose.
+		r.logger.Infof("Transforming apple %d pose from camera frame to world frame", i)
 		// Compose: world_T_camera * camera_T_apple = world_T_apple
-		apples[i].Pose = spatialmath.Compose(cameraPoseInWorld, apples[i].Pose)
+		apples[i].Pose = spatialmath.Compose(cameraPoseInWorld.Pose(), apples[i].Pose)
+		applePoseName := fmt.Sprintf("apple_pose_%d", i)
+		if err := viz.DrawPoses([]spatialmath.Pose{apples[i].Pose}, []string{applePoseName}, true); err != nil {
+			return err
+		}
 
 		// Transform apple point cloud to world frame.
 		if apples[i].Points != nil {
-			transformedCloud := pointcloud.NewBasicEmpty()
-			apples[i].Points.Iterate(0, 0, func(p r3.Vector, d pointcloud.Data) bool {
-				// Transform point: create pose from point, compose, extract point
-				pointPose := spatialmath.NewPoseFromPoint(p)
-				worldPointPose := spatialmath.Compose(cameraPoseInWorld, pointPose)
-				worldPt := worldPointPose.Point()
-				if err := transformedCloud.Set(worldPt, d); err != nil {
-					r.logger.Warnf("Failed to add point to transformed cloud: %v", err)
-				}
-				return true
-			})
-			apples[i].Points = transformedCloud
+			pc := apples[i].Points
+			pcInWorld := pointcloud.NewBasicPointCloud(pc.Size())
+			err = pointcloud.ApplyOffset(pc, cameraPoseInWorld.Pose(), pcInWorld)
+			if err != nil {
+				return fmt.Errorf("failed to transform apple point cloud: %w", err)
+			}
+			apples[i].Points = pcInWorld
 		}
 
 		// Also transform feature poses and point clouds.
 		for j := range apples[i].Features {
-			apples[i].Features[j].Pose = spatialmath.Compose(cameraPoseInWorld, apples[i].Features[j].Pose)
+			apples[i].Features[j].Pose = spatialmath.Compose(cameraPoseInWorld.Pose(), apples[i].Features[j].Pose)
 
 			// Transform feature point cloud.
 			if apples[i].Features[j].Points != nil {
-				transformedFeatureCloud := pointcloud.NewBasicEmpty()
-				apples[i].Features[j].Points.Iterate(0, 0, func(p r3.Vector, d pointcloud.Data) bool {
-					// Transform point: create pose from point, compose, extract point
-					pointPose := spatialmath.NewPoseFromPoint(p)
-					worldPointPose := spatialmath.Compose(cameraPoseInWorld, pointPose)
-					worldPt := worldPointPose.Point()
-					if err := transformedFeatureCloud.Set(worldPt, d); err != nil {
-						r.logger.Warnf("Failed to add point to transformed feature cloud: %v", err)
-					}
-					return true
-				})
-				apples[i].Features[j].Points = transformedFeatureCloud
+				pc := apples[i].Features[j].Points
+				pcInWorld := pointcloud.NewBasicPointCloud(pc.Size())
+				err = pointcloud.ApplyOffset(pc, cameraPoseInWorld.Pose(), pcInWorld)
+				if err != nil {
+					return fmt.Errorf("failed to transform feature point cloud: %w", err)
+				}
+				apples[i].Features[j].Points = pcInWorld
 			}
 		}
 	}
