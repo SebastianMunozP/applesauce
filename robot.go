@@ -115,7 +115,7 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	}
 
 	// Primary arm (xarm6) — required.
-	primaryArm, err := arm.FromProvider(machine, "xarm6")
+	primaryArm, err := arm.FromProvider(machine, "apple-arm")
 	if err != nil {
 		//~ return nil, fmt.Errorf("primary arm (xarm6): %w", err)
 	}
