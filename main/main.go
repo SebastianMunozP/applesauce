@@ -20,7 +20,7 @@ func main() {
 	plansDir := flag.String("plans-dir", "", "directory for cached crank trajectory plans (optional)")
 	flag.Parse()
 
-	logger := logging.NewDebugLogger("applesauce")
+	logger := logging.NewLogger("applesauce")
 
 	if *credsPath == "" {
 		logger.Fatal("-creds flag is required")
