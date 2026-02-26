@@ -123,18 +123,18 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	r.primaryArm = primaryArm
 
 	// Secondary arm — required.
-	secondaryArm, err := arm.FromProvider(machine, "secondary-arm")
-	if err != nil {
-		return nil, fmt.Errorf("secondary arm: %w", err)
-	}
-	r.secondaryArm = secondaryArm
+	// secondaryArm, err := arm.FromProvider(machine, "secondary-arm")
+	// if err != nil {
+	// 	return nil, fmt.Errorf("secondary arm: %w", err)
+	// }
+	// r.secondaryArm = secondaryArm
 
-	// Peeling arm — required.
-	peelingArm, err := arm.FromProvider(machine, "peeling-arm")
-	if err != nil {
-		return nil, fmt.Errorf("peeling arm: %w", err)
-	}
-	r.peelingArm = peelingArm
+	// // Peeling arm — required.
+	// peelingArm, err := arm.FromProvider(machine, "peeling-arm")
+	// if err != nil {
+	// 	return nil, fmt.Errorf("peeling arm: %w", err)
+	// }
+	// r.peelingArm = peelingArm
 
 	// Apple gripper — required.
 	appleGripper, err := gripper.FromProvider(machine, "applegripper")
@@ -144,11 +144,11 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	r.appleGripper = appleGripper
 
 	// Peeling gripper — required.
-	peelingGripper, err := gripper.FromProvider(machine, "peeling-gripper")
-	if err != nil {
-		return nil, fmt.Errorf("peeling gripper: %w", err)
-	}
-	r.peelingGripper = peelingGripper
+	// peelingGripper, err := gripper.FromProvider(machine, "peeling-gripper")
+	// if err != nil {
+	// 	return nil, fmt.Errorf("peeling gripper: %w", err)
+	// }
+	// r.peelingGripper = peelingGripper
 
 	// Primary camera — required.
 	primaryCam, err := camera.FromProvider(machine, "primary-cam")
@@ -158,11 +158,11 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	r.primaryCam = primaryCam
 
 	// Secondary camera — required.
-	secondaryCam, err := camera.FromProvider(machine, "secondary-cam")
-	if err != nil {
-		return nil, fmt.Errorf("secondary camera: %w", err)
-	}
-	r.secondaryCam = secondaryCam
+	// secondaryCam, err := camera.FromProvider(machine, "secondary-cam")
+	// if err != nil {
+	// 	return nil, fmt.Errorf("secondary camera: %w", err)
+	// }
+	// r.secondaryCam = secondaryCam
 
 	// Motion service — required.
 	motionSvc, err := motion.FromProvider(machine, "builtin")

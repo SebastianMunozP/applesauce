@@ -113,11 +113,14 @@ func Grasp(ctx context.Context, r *Robot) error {
 		time.Sleep(5 * time.Second) // wait for gripper to finish closing
 
 		// Retreat upward.
-		if err := r.moveLinear(ctx, r.appleGripper.Name().Name, approachPose, nil); err != nil {
+		r.logger.Info("Retreating upward")
+		if err := r.moveLinear(ctx, r.appleGripper.Name().Name, approachPose, worldState, 1); err != nil {
 			r.logger.Warnf("Failed to retreat: %v", err)
 		}
+		r.logger.Info("Retreated upward")
 
 		// Verify grasp.
+		r.logger.Info("Verifying grasp")
 		holding, err := r.appleGripper.IsHoldingSomething(ctx, nil)
 		if err != nil {
 			r.logger.Warnf("Hold check failed: %v", err)
@@ -129,6 +132,7 @@ func Grasp(ctx context.Context, r *Robot) error {
 		}
 
 		// STUB: visual verification with secondary camera would go here.
+		r.logger.Info("Verified grasp")
 
 		// Update apple pose to current gripper position.
 		endPos, err := r.primaryArm.EndPosition(ctx, nil)
