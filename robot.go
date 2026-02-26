@@ -175,7 +175,6 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 		logger.Error(err)
 		return nil, fmt.Errorf("framesystem service: %w", err)
 	}
-	logger.Infof("Framesystem service initialized: %v", r.fsSvc)
 
 	// Apple pose detector.
 	r.detector = applepose.NewDetector(nil)
