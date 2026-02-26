@@ -112,10 +112,10 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 		state:   &PeelingState{},
 	}
 
-	// Primary arm (xarm7) — required.
-	primaryArm, err := arm.FromProvider(machine, "xarm7")
+	// Primary arm (xarm6) — required.
+	primaryArm, err := arm.FromProvider(machine, "xarm6")
 	if err != nil {
-		//~ return nil, fmt.Errorf("primary arm (xarm7): %w", err)
+		//~ return nil, fmt.Errorf("primary arm (xarm6): %w", err)
 	}
 	r.primaryArm = primaryArm
 
@@ -129,7 +129,7 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	// Peeling arm — required.
 	peelingArm, err := arm.FromProvider(machine, "peeling-arm")
 	if err != nil {
-		return nil, fmt.Errorf("peeling arm: %w", err)
+		//~ return nil, fmt.Errorf("peeling arm: %w", err)
 	}
 	r.peelingArm = peelingArm
 
@@ -143,7 +143,7 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	// Peeling gripper — required.
 	peelingGripper, err := gripper.FromProvider(machine, "peeling-gripper")
 	if err != nil {
-		return nil, fmt.Errorf("peeling gripper: %w", err)
+		//~ return nil, fmt.Errorf("peeling gripper: %w", err)
 	}
 	r.peelingGripper = peelingGripper
 
@@ -250,6 +250,20 @@ func (r *Robot) moveToJoints(ctx context.Context, componentName string, joints [
 	fmt.Println(ret)
 	fmt.Println(err)
 	return err
+}
+
+// moveArmDirectToJoints moves an arm directly to joint positions without using
+// the motion service. This bypasses motion planning and obstacle avoidance.
+// Use this for simple moves when the motion service is unavailable or problematic.
+func (r *Robot) moveArmDirectToJoints(ctx context.Context, armComponent arm.Arm, joints []referenceframe.Input) error {
+	if joints == nil {
+		return fmt.Errorf("cannot move to nil joint positions (position not yet recorded)")
+	}
+	if armComponent == nil {
+		return fmt.Errorf("arm component is nil")
+	}
+
+	return armComponent.MoveToJointPositions(ctx, joints, nil)
 }
 
 // doPlan calls the motion service's DoPlan DoCommand to generate a trajectory

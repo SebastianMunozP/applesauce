@@ -54,7 +54,7 @@ func RemoveApple(ctx context.Context, r *Robot) error {
 	)
 
 	r.logger.Info("Approaching peeled apple")
-	if err := r.moveFree(ctx, "xarm7", approachPose, nil); err != nil {
+	if err := r.moveFree(ctx, "xarm6", approachPose, nil); err != nil {
 		return fmt.Errorf("move to apple approach: %w", err)
 	}
 
@@ -65,7 +65,7 @@ func RemoveApple(ctx context.Context, r *Robot) error {
 
 	// Linear approach to the apple on the core.
 	corePose := spatialmath.NewPose(corePoint, approachOrientation)
-	if err := r.moveLinear(ctx, "xarm7", corePose, nil); err != nil {
+	if err := r.moveLinear(ctx, "xarm6", corePose, nil); err != nil {
 		return fmt.Errorf("approach peeled apple: %w", err)
 	}
 
@@ -80,14 +80,14 @@ func RemoveApple(ctx context.Context, r *Robot) error {
 		approachOrientation,
 	)
 	r.logger.Info("Pulling apple off core")
-	if err := r.moveLinear(ctx, "xarm7", pullPose, nil); err != nil {
+	if err := r.moveLinear(ctx, "xarm6", pullPose, nil); err != nil {
 		return fmt.Errorf("pull apple off core: %w", err)
 	}
 
 	// Move to peeled apple bowl and release.
 	r.logger.Info("Depositing peeled apple")
 	aboveBowl := poseAbove(PeeledAppleBowlPose, 100)
-	if err := r.moveFree(ctx, "xarm7", aboveBowl, nil); err != nil {
+	if err := r.moveFree(ctx, "xarm6", aboveBowl, nil); err != nil {
 		return fmt.Errorf("move to peeled apple bowl: %w", err)
 	}
 
@@ -138,7 +138,7 @@ func grabCore(ctx context.Context, r *Robot) error {
 		r3.Vector{X: corePoint.X - 100, Y: corePoint.Y, Z: corePoint.Z},
 		approachOrientation,
 	)
-	if err := r.moveFree(ctx, "xarm7", approachPose, nil); err != nil {
+	if err := r.moveFree(ctx, "xarm6", approachPose, nil); err != nil {
 		return fmt.Errorf("approach core: %w", err)
 	}
 
@@ -147,7 +147,7 @@ func grabCore(ctx context.Context, r *Robot) error {
 	}
 
 	corePose := spatialmath.NewPose(corePoint, approachOrientation)
-	if err := r.moveLinear(ctx, "xarm7", corePose, nil); err != nil {
+	if err := r.moveLinear(ctx, "xarm6", corePose, nil); err != nil {
 		return fmt.Errorf("reach core: %w", err)
 	}
 
@@ -292,7 +292,7 @@ func depositCoreAndReturn(ctx context.Context, r *Robot) error {
 	if WasteBinPose != nil {
 		r.logger.Info("Depositing core in waste bin")
 		aboveBin := poseAbove(WasteBinPose, 100)
-		if err := r.moveFree(ctx, "xarm7", aboveBin, nil); err != nil {
+		if err := r.moveFree(ctx, "xarm6", aboveBin, nil); err != nil {
 			return fmt.Errorf("move to waste bin: %w", err)
 		}
 
@@ -308,5 +308,5 @@ func depositCoreAndReturn(ctx context.Context, r *Robot) error {
 
 	// Return primary arm to viewing position.
 	r.logger.Info("Returning primary arm to viewing position")
-	return r.moveToJoints(ctx, "xarm7", PrimaryViewingJoints)
+	return r.moveToJoints(ctx, "xarm6", PrimaryViewingJoints)
 }

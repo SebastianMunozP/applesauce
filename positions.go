@@ -9,17 +9,15 @@ import (
 
 // Joint positions recorded from the live robot on 2026-02-24.
 var (
-	// PrimaryViewingJoints is the joint position for the primary arm (xarm7)
-	// to view the bowl area. Recorded from xarm7's position.
+	// PrimaryViewingJoints is the joint position for the primary arm (xarm6)
+	// to view the bowl area. Recorded from xarm6's position.
 	PrimaryViewingJoints = []referenceframe.Input{
-		1.230044, -1.299491, -0.010149, 1.676676, 0.410073, 2.003047, 0.437884,
+		0.24424977600574496, 0.48869219422340393, -2.2238824367523193, -0.032807692885398865, 1.754069805145264, -1.5615639686584473,
 	}
 
 	// PeelingCrankGraspJoints is the joint position for the peeling arm
 	// to grasp the crank handle. Recorded from peeling-arm's position.
-	PeelingCrankGraspJoints = []referenceframe.Input{
-		-2.286582, -0.211757, -1.216493, 3.367374, 0.112762, -0.228739,
-	}
+	PeelingCrankGraspJoints []referenceframe.Input
 
 	// SecondaryViewingJoints is the joint position for the secondary arm
 	// to view the apple in the gripper.
@@ -54,17 +52,11 @@ var (
 
 	// SecondaryReleaseLeverApproach is the world-frame pose for the secondary arm
 	// to approach the release lever. Recorded 2026-02-25.
-	SecondaryReleaseLeverApproach spatialmath.Pose = spatialmath.NewPose(
-		r3.Vector{X: 393.915651, Y: 575.522783, Z: 1097.009589},
-		&spatialmath.OrientationVectorDegrees{OX: 0.152865, OY: -0.943185, OZ: -0.295017, Theta: -2.790274},
-	)
+	SecondaryReleaseLeverApproach spatialmath.Pose
 
 	// SecondaryReleaseLeverPressPose is the world-frame pose where the secondary arm
 	// presses down on the release lever. Recorded 2026-02-25.
-	SecondaryReleaseLeverPressPose spatialmath.Pose = spatialmath.NewPose(
-		r3.Vector{X: 399.667893, Y: 537.463280, Z: 1096.999404},
-		&spatialmath.OrientationVectorDegrees{OX: 0.152865, OY: -0.943185, OZ: -0.295017, Theta: -2.790273},
-	)
+	SecondaryReleaseLeverPressPose spatialmath.Pose
 
 	// PeelerCorePose is the world-frame pose of the apple core on the peeler
 	// after peeling is complete (where to grab it from).
@@ -73,17 +65,13 @@ var (
 
 	// PeelerSpikeRetractPose is the position the peeling arm moves to
 	// in order to fully retract the spikes from the core. Recorded 2026-02-25.
-	PeelerSpikeRetractPose spatialmath.Pose = spatialmath.NewPose(
-		r3.Vector{X: 603.053212, Y: 302.081609, Z: 914.735288},
-		&spatialmath.OrientationVectorDegrees{OX: -0.032604, OY: 0.674660, OZ: 0.737409, Theta: -92.336915},
-	)
+	PeelerSpikeRetractPose spatialmath.Pose
 
 	// CrankCenter is the center of the crank circle in the world frame.
 	// Recorded 2026-02-25: peeling-gripper world XY + (gripper Z + 59.5mm).
-	CrankCenter = r3.Vector{X: 583.131634, Y: 412.400876, Z: 1113.198631}
+	CrankCenter r3.Vector
 
 	// CrankAxis is the unit vector along which the spiral advances.
 	// Defaults to -X (the peeler spike direction).
-	CrankAxis = r3.Vector{X: -1, Y: 0, Z: 0.05}
-
+	CrankAxis r3.Vector
 )

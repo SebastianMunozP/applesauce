@@ -12,3 +12,6 @@ creds.json
 
 # Test data
 testdata/
+
+# Positions
+positions.go

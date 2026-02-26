@@ -191,7 +191,7 @@ func Regrasp(ctx context.Context, r *Robot) error {
 
 	// Retreat 50mm upward linearly.
 	retreatPose := poseAbove(currentPose, regraspRetreatMm)
-	if err := r.moveLinear(ctx, "xarm7", retreatPose, nil); err != nil {
+	if err := r.moveLinear(ctx, "xarm6", retreatPose, nil); err != nil {
 		return fmt.Errorf("retreat: %w", err)
 	}
 
@@ -207,7 +207,7 @@ func Regrasp(ctx context.Context, r *Robot) error {
 		r3.Vector{X: currentPoint.X, Y: currentPoint.Y, Z: currentPoint.Z + regraspRetreatMm},
 		rotatedOrientation,
 	)
-	if err := r.moveFree(ctx, "xarm7", approachPose, nil); err != nil {
+	if err := r.moveFree(ctx, "xarm6", approachPose, nil); err != nil {
 		return fmt.Errorf("move to regrasp approach: %w", err)
 	}
 
@@ -216,7 +216,7 @@ func Regrasp(ctx context.Context, r *Robot) error {
 		r3.Vector{X: currentPoint.X, Y: currentPoint.Y, Z: currentPoint.Z + graspFinalOffsetMm},
 		rotatedOrientation,
 	)
-	if err := r.moveLinear(ctx, "xarm7", graspPose, nil); err != nil {
+	if err := r.moveLinear(ctx, "xarm6", graspPose, nil); err != nil {
 		return fmt.Errorf("regrasp descent: %w", err)
 	}
 
@@ -230,7 +230,7 @@ func Regrasp(ctx context.Context, r *Robot) error {
 	}
 
 	// Retreat upward.
-	if err := r.moveLinear(ctx, "xarm7", approachPose, nil); err != nil {
+	if err := r.moveLinear(ctx, "xarm6", approachPose, nil); err != nil {
 		r.logger.Warnf("Failed to retreat after regrasp: %v", err)
 	}
 
