@@ -18,7 +18,7 @@ import (
 const (
 	maxGraspAttempts   = 3
 	graspApproachMm    = 200.0
-	graspFinalOffsetMm = 50.0
+	graspFinalOffsetMm = 30.0
 	obstacleSafetyMm   = 5.0
 )
 
@@ -86,7 +86,7 @@ func Grasp(ctx context.Context, r *Robot) error {
 			return fmt.Errorf("open gripper: %w", err)
 		}
 
-		time.Sleep(5 * time.Second) // wait for gripper to finish opening
+		time.Sleep(3 * time.Second) // wait for gripper to finish opening
 
 		// Linear descent to just above the apple.
 		graspPose := spatialmath.NewPose(
@@ -104,13 +104,13 @@ func Grasp(ctx context.Context, r *Robot) error {
 		}
 
 		// Grab.
-		_, err := r.primaryArm.DoCommand(ctx, map[string]interface{}{"move_gripper": 500})
+		_, err := r.primaryArm.DoCommand(ctx, map[string]interface{}{"move_gripper": 450})
 		if err != nil {
 			r.logger.Warnf("Grab failed: %v", err)
 			continue
 		}
 
-		time.Sleep(5 * time.Second) // wait for gripper to finish closing
+		time.Sleep(3 * time.Second) // wait for gripper to finish closing
 
 		// Retreat upward.
 		r.logger.Info("Retreating upward")
