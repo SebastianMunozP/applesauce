@@ -44,21 +44,21 @@ func Peel(ctx context.Context, r *Robot) error {
 		stabOrientation,
 	)
 	r.logger.Info("Moving to above peeler")
-	if err := r.moveFree(ctx, "xarm7", abovePeeler, nil); err != nil {
+	if err := r.moveFree(ctx, "apple-arm", abovePeeler, nil); err != nil {
 		return fmt.Errorf("move above peeler: %w", err)
 	}
 
 	// Linear descent into the jaws.
 	jawsPose := spatialmath.NewPose(jawsPoint, stabOrientation)
 	r.logger.Info("Lowering into peeler jaws")
-	if err := r.moveLinear(ctx, "xarm7", jawsPose, nil, 1); err != nil {
+	if err := r.moveLinear(ctx, "apple-arm", jawsPose, nil, 1); err != nil {
 		return fmt.Errorf("lower into jaws: %w", err)
 	}
 
 	// Push onto spikes.
 	spikePose := spatialmath.NewPose(peelerPoint, stabOrientation)
 	r.logger.Info("Pushing apple onto spikes")
-	if err := r.moveLinear(ctx, "xarm7", spikePose, nil, 1); err != nil {
+	if err := r.moveLinear(ctx, "apple-arm", spikePose, nil, 1); err != nil {
 		return fmt.Errorf("push onto spikes: %w", err)
 	}
 
@@ -69,7 +69,7 @@ func Peel(ctx context.Context, r *Robot) error {
 
 	// Retreat upward.
 	r.logger.Info("Retreating from peeler")
-	if err := r.moveLinear(ctx, "xarm7", abovePeeler, nil, 1); err != nil {
+	if err := r.moveLinear(ctx, "apple-arm", abovePeeler, nil, 1); err != nil {
 		return fmt.Errorf("retreat from peeler: %w", err)
 	}
 

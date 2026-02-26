@@ -113,10 +113,10 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 		state:   &PeelingState{},
 	}
 
-	// Primary arm (xarm7) — required.
-	primaryArm, err := arm.FromProvider(machine, "xarm7")
+	// Primary arm (apple-arm) — required.
+	primaryArm, err := arm.FromProvider(machine, "apple-arm")
 	if err != nil {
-		return nil, fmt.Errorf("primary arm (xarm7): %w", err)
+		return nil, fmt.Errorf("primary arm (apple-arm): %w", err)
 	}
 	r.primaryArm = primaryArm
 
@@ -183,7 +183,7 @@ func (r *Robot) linearMoveReq(componentName string, dest spatialmath.Pose, world
 		{Frame1: componentName, Frame2: "peeler"},
 	}
 	switch componentName {
-	case "xarm7":
+	case "apple-arm":
 		allows = append(allows, motionplan.CollisionSpecificationAllowedFrameCollisions{
 			Frame1: "applegripper", Frame2: "peeler",
 		})

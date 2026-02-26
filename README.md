@@ -83,7 +83,7 @@ robot config:
 
 | Component         | Name               | Description                          |
 |-------------------|--------------------|--------------------------------------|
-| Primary arm       | `xarm7`            | 7-DOF arm for grasping and placement |
+| Primary arm       | `apple-arm`            | 7-DOF arm for grasping and placement |
 | Secondary arm     | `secondary-arm`    | 6-DOF arm for pressing release lever |
 | Peeling arm       | `peeling-arm`      | 6-DOF arm for driving the crank      |
 | Apple gripper     | `arm_mount`        | Gripper on the primary arm           |
@@ -110,7 +110,7 @@ a bowl of apples is detected.
 
 ### Grasp
 
-1. **Multi-angle scan** -- moves `xarm7` through `PrimaryBowlScanAngles` and
+1. **Multi-angle scan** -- moves `apple-arm` through `PrimaryBowlScanAngles` and
    merges detections with `DetectWithHistory`. Falls back to the last Watch
    detection if no scan angles are configured.
 2. **Apple selection** -- scores apples by Z height and visible fraction
@@ -305,7 +305,7 @@ its positions/poses and either:
 - Returns a descriptive error (for moves that cannot be skipped).
 
 Currently recorded positions (in `positions.go`):
-- `PrimaryViewingJoints` -- xarm7 bowl-viewing position
+- `PrimaryViewingJoints` -- apple-arm bowl-viewing position
 - `SecondaryReleaseLeverApproach` -- secondary arm near the release lever
 - `PeelingCrankGraspJoints` -- peeling arm at the crank handle
 - `CrankCenter` -- world-frame center of the crank circle

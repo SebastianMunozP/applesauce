@@ -9,8 +9,8 @@ import (
 
 // Joint positions recorded from the live robot on 2026-02-24.
 var (
-	// PrimaryViewingJoints is the joint position for the primary arm (xarm7)
-	// to view the bowl area. Recorded from xarm7's position.
+	// PrimaryViewingJoints is the joint position for the primary arm (apple-arm)
+	// to view the bowl area. Recorded from apple-arm's position.
 	PrimaryViewingJoints = []referenceframe.Input{
 		1.230044, -1.299491, -0.010149, 1.676676, 0.410073, 2.003047, 0.437884,
 	}

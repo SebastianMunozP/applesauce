@@ -48,7 +48,7 @@ func RemoveApple(ctx context.Context, r *Robot) error {
 	// Allow arm-table collisions during linear moves near the peeler.
 	armTableCollision := motionplan.CollisionSpecification{
 		Allows: []motionplan.CollisionSpecificationAllowedFrameCollisions{
-			//~ {Frame1: "xarm7", Frame2: "table"},
+			//~ {Frame1: "apple-arm", Frame2: "table"},
 		},
 	}
 
@@ -64,13 +64,13 @@ func RemoveApple(ctx context.Context, r *Robot) error {
 		return nil
 	}
 	r.logger.Info("Moving to apple removal approach joints")
-	if err := r.moveToJoints(ctx, "xarm7", RemoveAppleApproachJoints); err != nil {
+	if err := r.moveToJoints(ctx, "apple-arm", RemoveAppleApproachJoints); err != nil {
 		return fmt.Errorf("move to apple removal approach joints: %w", err)
 	}
 
 	// Linear descent to the grab pose.
 	r.logger.Info("Descending to peeled apple")
-	if err := r.moveLinear(ctx, "xarm7", PeelerAppleGrabPose, nil, 8, armTableCollision); err != nil {
+	if err := r.moveLinear(ctx, "apple-arm", PeelerAppleGrabPose, nil, 8, armTableCollision); err != nil {
 		return fmt.Errorf("descend to apple grab pose: %w", err)
 	}
 
@@ -85,14 +85,14 @@ func RemoveApple(ctx context.Context, r *Robot) error {
 		grabOrientation,
 	)
 	r.logger.Info("Pulling apple off peeler")
-	if err := r.moveLinear(ctx, "xarm7", pullPose, nil, 1, armTableCollision); err != nil {
+	if err := r.moveLinear(ctx, "apple-arm", pullPose, nil, 1, armTableCollision); err != nil {
 		return fmt.Errorf("pull apple off peeler: %w", err)
 	}
 
 	// Move to peeled apple bowl and release.
 	if PeeledAppleBowlPose != nil {
 		r.logger.Info("Depositing peeled apple")
-		if err := r.moveFree(ctx, "xarm7", PeeledAppleBowlPose, nil); err != nil {
+		if err := r.moveFree(ctx, "apple-arm", PeeledAppleBowlPose, nil); err != nil {
 			return fmt.Errorf("move to peeled apple bowl: %w", err)
 		}
 	}
@@ -144,7 +144,7 @@ func grabCore(ctx context.Context, r *Robot) error {
 		r3.Vector{X: corePoint.X - 120, Y: corePoint.Y, Z: corePoint.Z},
 		approachOrientation,
 	)
-	if err := r.moveFree(ctx, "xarm7", approachPose, nil); err != nil {
+	if err := r.moveFree(ctx, "apple-arm", approachPose, nil); err != nil {
 		return fmt.Errorf("approach core: %w", err)
 	}
 
@@ -153,7 +153,7 @@ func grabCore(ctx context.Context, r *Robot) error {
 	}
 
 	corePose := spatialmath.NewPose(corePoint, approachOrientation)
-	if err := r.moveLinear(ctx, "xarm7", corePose, nil, 2); err != nil {
+	if err := r.moveLinear(ctx, "apple-arm", corePose, nil, 2); err != nil {
 		return fmt.Errorf("reach core: %w", err)
 	}
 
@@ -327,12 +327,12 @@ func depositCoreAndReturn(ctx context.Context, r *Robot) error {
 		r3.Vector{X: corePoint.X - 120, Y: corePoint.Y, Z: corePoint.Z},
 		approachOrientation,
 	)
-	if err := r.moveLinear(ctx, "xarm7", approachPose, nil, 2); err != nil {
+	if err := r.moveLinear(ctx, "apple-arm", approachPose, nil, 2); err != nil {
 		return fmt.Errorf("retreat core: %w", err)
 	}
 	if WasteBinPose != nil {
 		r.logger.Info("Depositing core in waste bin")
-		if err := r.moveFree(ctx, "xarm7", WasteBinPose, nil); err != nil {
+		if err := r.moveFree(ctx, "apple-arm", WasteBinPose, nil); err != nil {
 			return fmt.Errorf("move to waste bin: %w", err)
 		}
 
@@ -348,5 +348,5 @@ func depositCoreAndReturn(ctx context.Context, r *Robot) error {
 
 	// Return primary arm to viewing position.
 	r.logger.Info("Returning primary arm to viewing position")
-	return r.moveToJoints(ctx, "xarm7", PrimaryViewingJoints)
+	return r.moveToJoints(ctx, "apple-arm", PrimaryViewingJoints)
 }

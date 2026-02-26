@@ -56,7 +56,7 @@ func Grasp(ctx context.Context, r *Robot) error {
 			r3.Vector{X: appleCenter.X, Y: appleCenter.Y, Z: appleCenter.Z + graspApproachMm},
 			downOrientation,
 		)
-		if err := r.moveFree(ctx, "xarm7", approachPose, worldState); err != nil {
+		if err := r.moveFree(ctx, "apple-arm", approachPose, worldState); err != nil {
 			r.logger.Warnf("Failed to move to approach: %v", err)
 			continue
 		}
@@ -71,7 +71,7 @@ func Grasp(ctx context.Context, r *Robot) error {
 			r3.Vector{X: appleCenter.X, Y: appleCenter.Y, Z: appleCenter.Z + graspFinalOffsetMm},
 			downOrientation,
 		)
-		if err := r.moveLinear(ctx, "xarm7", graspPose, worldState, 1); err != nil {
+		if err := r.moveLinear(ctx, "apple-arm", graspPose, worldState, 1); err != nil {
 			r.logger.Warnf("Failed linear descent: %v", err)
 			continue
 		}
@@ -84,7 +84,7 @@ func Grasp(ctx context.Context, r *Robot) error {
 		}
 
 		// Retreat upward.
-		if err := r.moveLinear(ctx, "xarm7", approachPose, nil, 1); err != nil {
+		if err := r.moveLinear(ctx, "apple-arm", approachPose, nil, 1); err != nil {
 			r.logger.Warnf("Failed to retreat: %v", err)
 		}
 
@@ -145,7 +145,7 @@ func multiAngleScan(ctx context.Context, r *Robot) (*applepose.DetectionResult, 
 	var merged *applepose.DetectionResult
 	for i, joints := range PrimaryBowlScanAngles {
 		r.logger.Infof("Scanning angle %d/%d", i+1, len(PrimaryBowlScanAngles))
-		if err := r.moveToJoints(ctx, "xarm7", joints); err != nil {
+		if err := r.moveToJoints(ctx, "apple-arm", joints); err != nil {
 			r.logger.Warnf("Failed to move to scan angle %d: %v", i+1, err)
 			continue
 		}

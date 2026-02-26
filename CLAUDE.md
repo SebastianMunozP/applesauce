@@ -35,7 +35,7 @@ cmd/record_positions/  Utility to read current arm joint positions from the live
 Holds all hardware references, the motion service, the `applepose.Detector`, and cycle state.
 
 **All resources are required** (NewRobot fails without any of these):
-- `xarm7` — primary arm (7-DOF), does grasping, peeling placement, core removal
+- `apple-arm` — primary arm (7-DOF), does grasping, peeling placement, core removal
 - `secondary-arm` — secondary arm (6-DOF), presses release lever
 - `peeling-arm` — drives the crank for peeling
 - `arm_mount` — gripper on the primary arm
@@ -56,13 +56,13 @@ The crank routine calls `moveLinear` for each 1mm step.
 ## Positions (`positions.go`)
 
 **Hardcoded joint positions** (recorded from the live robot on 2026-02-24):
-- `PrimaryViewingJoints` — xarm7 bowl-viewing position (7 values, radians)
+- `PrimaryViewingJoints` — apple-arm bowl-viewing position (7 values, radians)
 - `SecondaryReleaseLeverApproach` — secondary arm near the release lever (6 values)
 - `PeelingCrankGraspJoints` — peeling arm at the crank handle (6 values)
 
 **Stub joint positions** (nil, need recording):
 - `SecondaryViewingJoints` — secondary arm looking at the gripper
-- `PrimaryBowlScanAngles` — multiple xarm7 viewpoints for multi-angle scanning
+- `PrimaryBowlScanAngles` — multiple apple-arm viewpoints for multi-angle scanning
 
 **Stub world-frame poses** (nil, need measuring):
 - `PeelerDevicePose`, `PeelerJawsPose` — peeler machine locations
@@ -80,7 +80,7 @@ Every routine checks for nil poses/joints before use and either logs a warning a
 Moves arms to viewing positions, polls `primaryCam.NextPointCloud` every 3s, runs `detector.Detect`, returns when `BowlDetected` is true. If no camera is configured, returns immediately (allows testing downstream stages).
 
 ### Grasp (`grasp.go`)
-1. Multi-angle scan: moves xarm7 through `PrimaryBowlScanAngles`, calls `DetectWithHistory` to merge. Falls back to last Watch detection if no scan angles configured.
+1. Multi-angle scan: moves apple-arm through `PrimaryBowlScanAngles`, calls `DetectWithHistory` to merge. Falls back to last Watch detection if no scan angles configured.
 2. Apple selection: scores by Z height + visible fraction (highest & most visible = most accessible).
 3. Obstacle avoidance: other apples become sphere obstacles with 5mm safety margin in `WorldState`.
 4. Grasp loop (3 attempts): `moveFree` 200mm above → open gripper → `moveLinear` to 20mm above center → `Grab` → `moveLinear` retreat → verify with `IsHoldingSomething`.

@@ -10,7 +10,7 @@ import (
 func Watch(ctx context.Context, r *Robot) error {
 	// Move primary arm to viewing position.
 	r.logger.Info("Moving primary arm to viewing position")
-	if err := r.moveToJoints(ctx, "xarm7", PrimaryViewingJoints); err != nil {
+	if err := r.moveToJoints(ctx, "apple-arm", PrimaryViewingJoints); err != nil {
 		return err
 	}
 
