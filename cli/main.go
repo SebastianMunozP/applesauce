@@ -36,6 +36,7 @@ const validSteps = "watch, grasp, identify, peel, crank, remove, reset, retract"
 func main() {
 	credsPath := flag.String("creds", "", "path to robot credentials JSON file")
 	step := flag.String("step", "", "step to run: "+validSteps)
+	plansDir := flag.String("plans-dir", "", "directory for cached crank trajectory plans (optional)")
 	flag.Parse()
 
 	logger := logging.NewDebugLogger("applesauce-cli")
@@ -83,6 +84,9 @@ func main() {
 	r, err := applesauce.NewRobot(ctx, machine, logger)
 	if err != nil {
 		logger.Fatal(err)
+	}
+	if *plansDir != "" {
+		r.PlansDir = *plansDir
 	}
 
 	logger.Infof("=== Running step: %s ===", *step)

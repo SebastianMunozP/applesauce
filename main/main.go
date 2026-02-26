@@ -17,6 +17,7 @@ import (
 
 func main() {
 	credsPath := flag.String("creds", "", "path to robot credentials JSON file")
+	plansDir := flag.String("plans-dir", "", "directory for cached crank trajectory plans (optional)")
 	flag.Parse()
 
 	logger := logging.NewDebugLogger("applesauce")
@@ -55,7 +56,9 @@ func main() {
 	if err != nil {
 		logger.Fatal(err)
 	}
-	_ = r
+	if *plansDir != "" {
+		r.PlansDir = *plansDir
+	}
 
 	if err := applesauce.Run(ctx, r); err != nil {
 		logger.Fatal(err)

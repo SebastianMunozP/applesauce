@@ -2,11 +2,18 @@ package applesauce
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/golang/geo/r3"
 
+	"go.viam.com/rdk/components/arm"
+	"go.viam.com/rdk/motionplan"
+	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/spatialmath"
+	"go.viam.com/rdk/utils"
 )
 
 // Retract presses the release lever, retracts spikes, and returns the secondary arm
@@ -100,20 +107,12 @@ func ResetMachine(ctx context.Context, r *Robot) error {
 		r.logger.Warnf("Core removal: %v", err)
 	}
 
-	// Step 2: Secondary arm presses release lever.
-	if err := pressReleaseLever(ctx, r); err != nil {
-		r.logger.Warnf("Release lever: %v", err)
+	// Step 2: Press release lever, retract spikes, return secondary arm.
+	if err := Retract(ctx, r); err != nil {
+		r.logger.Warnf("Retract: %v", err)
 	}
 
-	// Step 3: Secondary arm returns to viewing position.
-	if SecondaryReleaseLeverApproach != nil {
-		// Move above approach first.
-		if err := returnSecondaryArm(ctx, r); err != nil {
-			r.logger.Warnf("Secondary arm return: %v", err)
-		}
-	}
-
-	// Step 4: Primary arm deposits core and returns to viewing position.
+	// Step 3: Primary arm deposits core and returns to viewing position.
 	if err := depositCoreAndReturn(ctx, r); err != nil {
 		r.logger.Warnf("Core deposit: %v", err)
 	}
@@ -161,6 +160,8 @@ func grabCore(ctx context.Context, r *Robot) error {
 }
 
 // pressReleaseLever uses the secondary arm to press the release lever.
+// The four linear moves (descent, press, release, retract) are each planned
+// once via DoPlan and cached for immediate replay on subsequent calls.
 func pressReleaseLever(ctx context.Context, r *Robot) error {
 	if SecondaryReleaseLeverApproach == nil {
 		r.logger.Warn("SecondaryReleaseLeverApproach not configured; skipping lever press")
@@ -174,34 +175,37 @@ func pressReleaseLever(ctx context.Context, r *Robot) error {
 		return fmt.Errorf("move above lever approach: %w", err)
 	}
 
-	if err := r.moveLinear(ctx, "secondary-arm", SecondaryReleaseLeverApproach, nil); err != nil {
-		return fmt.Errorf("move to lever approach: %w", err)
+	if err := r.cachedLinearMove(ctx, "secondary-arm", SecondaryReleaseLeverApproach,
+		&r.leverDescentTrajectory, "lever_descent.json"); err != nil {
+		return fmt.Errorf("descend to lever: %w", err)
 	}
 
 	if SecondaryReleaseLeverPressPose == nil {
 		r.logger.Warn("SecondaryReleaseLeverPressPose not configured (stub); lever press simulated")
-		if err := r.moveLinear(ctx, "secondary-arm", aboveApproach, nil); err != nil {
+		if err := r.cachedLinearMove(ctx, "secondary-arm", aboveApproach,
+			&r.leverRetractTrajectory, "lever_retract.json"); err != nil {
 			r.logger.Warnf("retract from lever approach: %v", err)
 		}
 		return nil
 	}
 
 	r.logger.Info("Pressing release lever")
-	if err := r.moveLinear(ctx, "secondary-arm", SecondaryReleaseLeverPressPose, nil); err != nil {
+	if err := r.cachedLinearMove(ctx, "secondary-arm", SecondaryReleaseLeverPressPose,
+		&r.leverPressTrajectory, "lever_press.json"); err != nil {
 		return fmt.Errorf("press lever: %w", err)
 	}
-	
-	err := retractSpikes(ctx, r)
-	if err != nil {
-		return err
-	}
-	
-	if err := r.moveLinear(ctx, "secondary-arm", SecondaryReleaseLeverApproach, nil); err != nil {
-		return fmt.Errorf("move to lever approach: %w", err)
+
+	if err := retractSpikes(ctx, r); err != nil {
+		r.logger.Warnf("Spike retraction: %v", err)
 	}
 
-	// Return to 200mm above approach.
-	if err := r.moveLinear(ctx, "secondary-arm", aboveApproach, nil); err != nil {
+	if err := r.cachedLinearMove(ctx, "secondary-arm", SecondaryReleaseLeverApproach,
+		&r.leverReleaseTrajectory, "lever_release.json"); err != nil {
+		return fmt.Errorf("release lever: %w", err)
+	}
+
+	if err := r.cachedLinearMove(ctx, "secondary-arm", aboveApproach,
+		&r.leverRetractTrajectory, "lever_retract.json"); err != nil {
 		return fmt.Errorf("retract from lever: %w", err)
 	}
 
@@ -209,25 +213,66 @@ func pressReleaseLever(ctx context.Context, r *Robot) error {
 	return nil
 }
 
-// retractSpikes uses the peeling arm to pull the spikes out of the core.
+// spikeRetractMaxVelDegsPerSec is the maximum joint velocity for the spike
+// retraction move. The spikes are embedded in an apple core, so we pull slowly.
+const spikeRetractMaxVelDegsPerSec = 15.0
+
+// retractSpikes retracts the peeling arm back to PeelingCrankGraspJoints using
+// a cached trajectory loaded from crank_retract.json. The trajectory is sent
+// directly to the arm via MoveThroughJointPositions with a velocity limit,
+// bypassing the motion service's DoExecute (which doesn't support MoveOptions).
 func retractSpikes(ctx context.Context, r *Robot) error {
 	if r.peelingArm == nil {
 		r.logger.Warn("Peeling arm not available (stub); skipping spike retraction")
 		return nil
 	}
-
-	if PeelerSpikeRetractPose == nil {
-		r.logger.Warn("PeelerSpikeRetractPose not configured (stub); skipping spike retraction")
+	if PeelingCrankGraspJoints == nil {
+		r.logger.Warn("PeelingCrankGraspJoints not recorded; skipping spike retraction")
 		return nil
 	}
 
-	r.logger.Info("Retracting spikes from core")
-	if err := r.moveFree(ctx, "peeling-arm", PeelerSpikeRetractPose, nil); err != nil {
-		return fmt.Errorf("retract spikes: %w", err)
+	steps, err := loadRetractSteps(r)
+	if err != nil {
+		return fmt.Errorf("load retract trajectory: %w", err)
 	}
 
+	vel := utils.DegToRad(spikeRetractMaxVelDegsPerSec)
+	opts := &arm.MoveOptions{MaxVelRads: vel}
+
+	r.logger.Infof("Retracting spikes (%d steps, max %.1f deg/s)", len(steps), spikeRetractMaxVelDegsPerSec)
+	if err := r.peelingArm.MoveThroughJointPositions(ctx, steps, opts, nil); err != nil {
+		return fmt.Errorf("execute spike retract: %w", err)
+	}
 	r.logger.Info("Spikes retracted")
 	return nil
+}
+
+// loadRetractSteps loads the crank_retract.json trajectory and extracts the
+// peeling-arm joint positions as a slice of input steps.
+func loadRetractSteps(r *Robot) ([][]referenceframe.Input, error) {
+	if r.PlansDir == "" {
+		return nil, fmt.Errorf("PlansDir not set; cannot load crank_retract.json")
+	}
+	path := filepath.Join(r.PlansDir, "crank_retract.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	var traj motionplan.Trajectory
+	if err := json.Unmarshal(data, &traj); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+
+	steps := make([][]referenceframe.Input, 0, len(traj))
+	for i, step := range traj {
+		joints, ok := step["peeling-arm"]
+		if !ok || len(joints) == 0 {
+			return nil, fmt.Errorf("step %d missing peeling-arm joints", i)
+		}
+		steps = append(steps, joints)
+	}
+	r.logger.Infof("Loaded %d retract steps from %s", len(steps), path)
+	return steps, nil
 }
 
 // returnSecondaryArm returns the secondary arm to its viewing position.

@@ -2,9 +2,14 @@ package applesauce
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/golang/geo/r3"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	applepose "github.com/biotinker/applesauce/apple_pose"
 	"go.viam.com/rdk/components/arm"
@@ -18,6 +23,9 @@ import (
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/spatialmath"
 )
+
+// motionServiceName is the resource name of the builtin motion service.
+const motionServiceName = "builtin"
 
 // Robot holds all hardware references, services, and state for the peeling pipeline.
 type Robot struct {
@@ -45,6 +53,18 @@ type Robot struct {
 
 	// State
 	state *PeelingState
+
+	// PlansDir, when set, is a directory for persisting cached
+	// trajectories to disk. If empty, plans are cached in memory only.
+	PlansDir string
+
+	// Cached trajectories — planned once via DoPlan, reused via DoExecute.
+	crankSpiralTrajectory   motionplan.Trajectory
+	crankRetractTrajectory  motionplan.Trajectory
+	leverDescentTrajectory  motionplan.Trajectory
+	leverPressTrajectory    motionplan.Trajectory
+	leverReleaseTrajectory  motionplan.Trajectory
+	leverRetractTrajectory  motionplan.Trajectory
 }
 
 // PeelingState tracks the state of the current peeling cycle.
@@ -95,14 +115,14 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	// Primary arm (xarm7) — required.
 	primaryArm, err := arm.FromProvider(machine, "xarm7")
 	if err != nil {
-		return nil, fmt.Errorf("primary arm (xarm7): %w", err)
+		//~ return nil, fmt.Errorf("primary arm (xarm7): %w", err)
 	}
 	r.primaryArm = primaryArm
 
 	// Secondary arm — required.
 	secondaryArm, err := arm.FromProvider(machine, "secondary-arm")
 	if err != nil {
-		return nil, fmt.Errorf("secondary arm: %w", err)
+		//~ return nil, fmt.Errorf("secondary arm: %w", err)
 	}
 	r.secondaryArm = secondaryArm
 
@@ -116,7 +136,7 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	// Apple gripper — required.
 	appleGripper, err := gripper.FromProvider(machine, "arm_mount")
 	if err != nil {
-		return nil, fmt.Errorf("apple gripper (arm_mount): %w", err)
+		//~ return nil, fmt.Errorf("apple gripper (arm_mount): %w", err)
 	}
 	r.appleGripper = appleGripper
 
@@ -130,14 +150,14 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	// Primary camera — required.
 	primaryCam, err := camera.FromProvider(machine, "primary-cam")
 	if err != nil {
-		return nil, fmt.Errorf("primary camera: %w", err)
+		//~ return nil, fmt.Errorf("primary camera: %w", err)
 	}
 	r.primaryCam = primaryCam
 
 	// Secondary camera — required.
 	secondaryCam, err := camera.FromProvider(machine, "secondary-cam")
 	if err != nil {
-		return nil, fmt.Errorf("secondary camera: %w", err)
+		//~ return nil, fmt.Errorf("secondary camera: %w", err)
 	}
 	r.secondaryCam = secondaryCam
 
@@ -230,6 +250,130 @@ func (r *Robot) moveToJoints(ctx context.Context, componentName string, joints [
 	fmt.Println(ret)
 	fmt.Println(err)
 	return err
+}
+
+// doPlan calls the motion service's DoPlan DoCommand to generate a trajectory
+// without executing it. The trajectory can be cached and replayed via doExecute.
+func (r *Robot) doPlan(ctx context.Context, req motion.MoveReq) (motionplan.Trajectory, error) {
+	proto, err := req.ToProto(motionServiceName)
+	if err != nil {
+		return nil, fmt.Errorf("build plan proto: %w", err)
+	}
+	bytes, err := protojson.Marshal(proto)
+	if err != nil {
+		return nil, fmt.Errorf("marshal plan request: %w", err)
+	}
+	resp, err := r.motion.DoCommand(ctx, map[string]interface{}{
+		"plan": string(bytes),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("DoPlan: %w", err)
+	}
+	raw, ok := resp["plan"]
+	if !ok {
+		return nil, fmt.Errorf("DoPlan response missing 'plan' key")
+	}
+	var trajectory motionplan.Trajectory
+	if err := mapstructure.Decode(raw, &trajectory); err != nil {
+		return nil, fmt.Errorf("decode trajectory: %w", err)
+	}
+	return trajectory, nil
+}
+
+// doExecute calls the motion service's DoExecute DoCommand to replay a cached trajectory.
+func (r *Robot) doExecute(ctx context.Context, trajectory motionplan.Trajectory) error {
+	r.logger.Debugf("doExecute: %d trajectory steps", len(trajectory))
+	if len(trajectory) > 0 {
+		r.logger.Debugf("doExecute: first step: %v", trajectory[0])
+		r.logger.Debugf("doExecute: last step:  %v", trajectory[len(trajectory)-1])
+	}
+
+	cmd := map[string]interface{}{
+		"execute": trajectory,
+	}
+	r.logger.Debugf("doExecute: cmd type for 'execute' key: %T", cmd["execute"])
+
+	resp, err := r.motion.DoCommand(ctx, cmd)
+	if err != nil {
+		return fmt.Errorf("DoExecute: %w", err)
+	}
+	if ok, _ := resp["execute"].(bool); !ok {
+		return fmt.Errorf("DoExecute returned non-true response: %v", resp["execute"])
+	}
+	return nil
+}
+
+// cachedLinearMove plans (or replays from cache) a linear-constrained move to
+// dest for the given component. traj must point to a trajectory field on Robot;
+// it is populated on first call and reused thereafter.
+func (r *Robot) cachedLinearMove(ctx context.Context, componentName string, dest spatialmath.Pose, traj *motionplan.Trajectory, cacheFile string) error {
+	if *traj == nil {
+		*traj = r.loadCachedTrajectory(cacheFile)
+	}
+	if *traj == nil {
+		r.logger.Infof("Planning %s (first run; will be cached)", cacheFile)
+		req := motion.MoveReq{
+			ComponentName: componentName,
+			Destination:   referenceframe.NewPoseInFrame("world", dest),
+			Constraints: motionplan.NewConstraints(
+				[]motionplan.LinearConstraint{{
+					LineToleranceMm:          1.0,
+					OrientationToleranceDegs: 2.0,
+				}},
+				nil, nil, nil,
+			),
+		}
+		planned, err := r.doPlan(ctx, req)
+		if err != nil {
+			return err
+		}
+		*traj = planned
+		r.saveCachedTrajectory(cacheFile, planned)
+	}
+	return r.doExecute(ctx, *traj)
+}
+
+// loadCachedTrajectory loads a trajectory from PlansDir/filename.
+// Returns nil if PlansDir is unset, the file doesn't exist, or parsing fails.
+func (r *Robot) loadCachedTrajectory(filename string) motionplan.Trajectory {
+	if r.PlansDir == "" {
+		return nil
+	}
+	path := filepath.Join(r.PlansDir, filename)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var traj motionplan.Trajectory
+	if err := json.Unmarshal(data, &traj); err != nil {
+		r.logger.Warnf("Failed to parse cached trajectory %s: %v", path, err)
+		return nil
+	}
+	r.logger.Infof("Loaded cached trajectory from %s (%d steps)", path, len(traj))
+	return traj
+}
+
+// saveCachedTrajectory writes a trajectory to CrankPlansDir/filename as JSON.
+// No-op if CrankPlansDir is unset; logs a warning on write failure.
+func (r *Robot) saveCachedTrajectory(filename string, traj motionplan.Trajectory) {
+	if r.PlansDir == "" {
+		return
+	}
+	if err := os.MkdirAll(r.PlansDir, 0o755); err != nil {
+		r.logger.Warnf("Failed to create plans dir %s: %v", r.PlansDir, err)
+		return
+	}
+	path := filepath.Join(r.PlansDir, filename)
+	data, err := json.Marshal(traj)
+	if err != nil {
+		r.logger.Warnf("Failed to serialize trajectory for %s: %v", path, err)
+		return
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		r.logger.Warnf("Failed to write trajectory to %s: %v", path, err)
+		return
+	}
+	r.logger.Infof("Saved trajectory to %s (%d steps)", path, len(traj))
 }
 
 // poseAbove returns a new pose shifted upward (+Z) by the given offset in mm.
