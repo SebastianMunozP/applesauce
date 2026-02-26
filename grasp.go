@@ -92,8 +92,8 @@ func Grasp(ctx context.Context, r *Robot) error {
 			r3.Vector{X: appleCenter.X, Y: appleCenter.Y, Z: appleCenter.Z + graspFinalOffsetMm},
 			downOrientation,
 		)
-		if err := r.moveLinear(ctx, r.primaryArm.Name().Name, graspPose, worldState); err != nil {
-			r.logger.Warnf("Failed linear descent: %v", err)
+		if err := r.moveFreeForGrasp(ctx, r.primaryArm.Name().Name, graspPose, worldState); err != nil {
+			r.logger.Warnf("Failed move for grasp: %v", err)
 			continue
 		}
 
