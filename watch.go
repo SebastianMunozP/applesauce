@@ -97,22 +97,24 @@ func Watch(ctx context.Context, r *Robot) error {
 
 		if result.BowlDetected {
 			r.logger.Infof("Bowl detected with %d apples!", len(result.Bowl.Apples))
-			r.state.LastDetection = result
 
 			// Save camera-frame point clouds BEFORE transformation.
 			if err := savePointClouds(r, downsampled, result, "camera"); err != nil {
 				r.logger.Warnf("Failed to save camera-frame point clouds: %v", err)
 			}
 
-			// Transform point clouds to world frame.
-			if err := transformPointCloudsToWorldFrame(ctx, r, downsampled, result); err != nil {
-				r.logger.Warnf("Failed to transform point clouds: %v", err)
+			// Transform entire detection (poses + point clouds) to world frame.
+			if err := transformDetectionToWorldFrame(ctx, r, downsampled, result); err != nil {
+				r.logger.Warnf("Failed to transform detection to world frame: %v", err)
 			} else {
 				// Save world-frame point clouds AFTER transformation.
 				if err := savePointClouds(r, downsampled, result, "world"); err != nil {
 					r.logger.Warnf("Failed to save world-frame point clouds: %v", err)
 				}
 			}
+
+			// Store the detection result (now in world frame) for grasp to use.
+			r.state.LastDetection = result
 
 			return nil
 		}
@@ -148,103 +150,5 @@ func savePointClouds(r *Robot, cameraCloud pointcloud.PointCloud, result *applep
 		}
 	}
 
-	return nil
-}
-
-// savePointCloudToPCD writes a point cloud to a PCD file in binary format.
-func savePointCloudToPCD(cloud pointcloud.PointCloud, path string) error {
-	file, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("create file: %w", err)
-	}
-	defer file.Close()
-
-	if err := pointcloud.ToPCD(cloud, file, pointcloud.PCDBinary); err != nil {
-		return fmt.Errorf("write PCD: %w", err)
-	}
-
-	return nil
-}
-
-// transformPointCloudsToWorldFrame transforms the camera point cloud and apple point clouds
-// from camera frame to world frame. This modifies the point clouds in place.
-func transformPointCloudsToWorldFrame(ctx context.Context, r *Robot, cameraCloud pointcloud.PointCloud, result *applepose.DetectionResult) error {
-	if r.primaryCam == nil {
-		return fmt.Errorf("no primary camera available")
-	}
-
-	// Get the camera's pose in world frame via the robot's frame system.
-	// frameSystem, err := r.machine.FrameSystemConfig(ctx)
-	// if err != nil {
-	// 	return fmt.Errorf("get frame system: %w", err)
-	// }
-
-	// Find the camera's transform in the frame system.
-	// var cameraPoseInWorld spatialmath.Pose
-	// found := false
-	// for _, part := range frameSystem.Parts {
-	// 	if part.FrameConfig.Name() == "primary-cam" {
-	// 		cameraPoseInWorld = part.FrameConfig.Pose()
-	// 		found = true
-	// 		r.logger.Debugf("Camera pose in world: %v", cameraPoseInWorld)
-	// 		break
-	// 	}
-	// }
-
-	// if !found {
-	// 	return fmt.Errorf("camera frame 'primary-cam' not found in frame system")
-	// }
-
-	// Get camera pose in world frame
-	cameraPoseInWorld, err := r.fsSvc.GetPose(ctx, r.primaryCam.Name().Name, "", nil, nil)
-	if err != nil {
-		return err
-	}
-
-	// Transform the full camera point cloud to world frame and save it directly
-	transformedCameraCloud := pointcloud.NewBasicPointCloud(cameraCloud.Size())
-	err = pointcloud.ApplyOffset(cameraCloud, cameraPoseInWorld.Pose(), transformedCameraCloud)
-	if err != nil {
-		return fmt.Errorf("failed to transform camera point cloud: %w", err)
-	}
-
-	// Save the transformed camera cloud (world frame)
-	outputDir := "pointclouds"
-	cameraWorldPath := fmt.Sprintf("%s/camera_full_world.pcd", outputDir)
-	if err := savePointCloudToPCD(transformedCameraCloud, cameraWorldPath); err != nil {
-		r.logger.Warnf("Failed to save world-frame camera cloud: %v", err)
-	} else {
-		r.logger.Infof("Saved world-frame camera point cloud to %s (%d points)", cameraWorldPath, transformedCameraCloud.Size())
-	}
-
-	// Transform each apple's point cloud to world frame.
-	for i := range result.Bowl.Apples {
-		pc := result.Bowl.Apples[i].Points
-		pcInWorld := pointcloud.NewBasicPointCloud(pc.Size())
-		err = pointcloud.ApplyOffset(pc, cameraPoseInWorld.Pose(), pcInWorld)
-		if err != nil {
-			return fmt.Errorf("failed to transform apple point cloud: %w", err)
-		}
-		result.Bowl.Apples[i].Points = pcInWorld
-
-		// // Transform apple point cloud.
-		// if result.Bowl.Apples[i].Points != nil {
-		// 	transformedCloud := pointcloud.NewBasicEmpty()
-
-		// 	result.Bowl.Apples[i].Points.Iterate(0, 0, func(p r3.Vector, d pointcloud.Data) bool {
-		// 		// Transform point: create pose from point, compose, extract point
-		// 		pointPose := spatialmath.NewPoseFromPoint(p)
-		// 		worldPointPose := spatialmath.Compose(cameraPoseInWorld, pointPose)
-		// 		worldPt := worldPointPose.Point()
-		// 		if err := transformedCloud.Set(worldPt, d); err != nil {
-		// 			r.logger.Warnf("Failed to add point to transformed cloud: %v", err)
-		// 		}
-		// 		return true
-		// 	})
-		// 	result.Bowl.Apples[i].Points = transformedCloud
-		// }
-	}
-
-	r.logger.Infof("Transformed %d apple point clouds from camera frame to world frame", len(result.Bowl.Apples))
 	return nil
 }

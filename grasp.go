@@ -10,7 +10,6 @@ import (
 
 	applepose "github.com/biotinker/applesauce/apple_pose"
 	viz "github.com/viam-labs/motion-tools/client/client"
-	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/spatialmath"
 )
@@ -26,21 +25,27 @@ const (
 // to grasp it with the primary arm. On success, updates the apple pose in state.
 func Grasp(ctx context.Context, r *Robot) error {
 	// Multi-angle scan to build a merged detection.
+	r.logger.Info("Multi-angle scan")
 	detection, err := multiAngleScan(ctx, r)
 	if err != nil {
+		r.logger.Warnf("Multi-angle scan failed: %v", err)
 		return fmt.Errorf("multi-angle scan: %w", err)
 	}
 
 	if len(detection.Bowl.Apples) == 0 {
+		r.logger.Warn("No apples found in scan")
 		return fmt.Errorf("no apples found in scan")
 	}
 
-	// Transform apple poses from camera frame to world frame.
-	if err := transformApplesToWorldFrame(ctx, r, detection.Bowl.Apples); err != nil {
-		r.logger.Warnf("Failed to transform apple poses to world frame: %v", err)
-		r.logger.Warn("Proceeding with camera-frame positions (may cause unreachable errors)")
+	// Visualize the detected apples.
+	for i, apple := range detection.Bowl.Apples {
+		applePoseName := fmt.Sprintf("grasp_apple_pose_%d", i)
+		if err := viz.DrawPoses([]spatialmath.Pose{apple.Pose}, []string{applePoseName}, true); err != nil {
+			return err
+		}
 	}
 
+	// Note: Detection is already in world frame from the watch step.
 	// Select the most accessible apple.
 	target := selectApple(detection.Bowl.Apples)
 	r.state.TargetApple = &target
@@ -139,54 +144,76 @@ func Grasp(ctx context.Context, r *Robot) error {
 
 // multiAngleScan moves the primary arm through scan angles and merges detections.
 func multiAngleScan(ctx context.Context, r *Robot) (*applepose.DetectionResult, error) {
+	r.logger.Infof("Multi-angle scan, amount of angles: %d", len(PrimaryBowlScanAngles))
 	// If no scan angles are configured, use the last detection from Watch.
+
 	if len(PrimaryBowlScanAngles) == 0 {
 		r.logger.Warn("No scan angles configured; using last detection from Watch")
 		if r.state.LastDetection != nil {
 			return r.state.LastDetection, nil
 		}
+		r.logger.Warn("No last detection available, doing a single detection")
 
 		// If we have a camera, do a single detection from the current position.
 		if r.primaryCam == nil {
+			r.logger.Error("No camera available, cannot do a single detection")
 			return nil, fmt.Errorf("no camera available and no prior detection")
 		}
+		r.logger.Info("Getting point cloud from camera")
 		cloud, err := r.primaryCam.NextPointCloud(ctx, nil)
 		if err != nil {
+			r.logger.Error("Camera error, cannot do a single detection")
 			return nil, fmt.Errorf("camera: %w", err)
 		}
-		return r.detector.Detect(ctx, cloud)
+		r.logger.Infof("Got point cloud with %d points", cloud.Size())
+		r.logger.Info("Detecting apples in point cloud")
+		result, err := r.detector.Detect(ctx, cloud)
+		if err != nil {
+			r.logger.Error("Detection failed, cannot do a single detection")
+			return nil, fmt.Errorf("detection: %w", err)
+		}
+		r.logger.Infof("Detected %d apples", len(result.Bowl.Apples))
+		r.logger.Info("Transforming detection to world frame")
+		// Transform detection to world frame
+		if err := transformDetectionToWorldFrame(ctx, r, cloud, result); err != nil {
+			r.logger.Error("Failed to transform detection to world frame")
+			return nil, fmt.Errorf("transform detection to world frame: %w", err)
+		}
+		return result, nil
 	}
 
 	// Move through each scan angle and merge detections.
 	var merged *applepose.DetectionResult
-	for i, joints := range PrimaryBowlScanAngles {
-		r.logger.Infof("Scanning angle %d/%d", i+1, len(PrimaryBowlScanAngles))
-		if err := r.moveToJoints(ctx, "xarm6", joints); err != nil {
-			r.logger.Warnf("Failed to move to scan angle %d: %v", i+1, err)
-			continue
-		}
+	// for i, joints := range PrimaryBowlScanAngles {
+	// 	r.logger.Infof("Scanning angle %d/%d", i+1, len(PrimaryBowlScanAngles))
+	// 	if err := r.moveToJoints(ctx, "xarm6", joints); err != nil {
+	// 		r.logger.Warnf("Failed to move to scan angle %d: %v", i+1, err)
+	// 		continue
+	// 	}
 
-		if r.primaryCam == nil {
-			continue
-		}
+	// 	if r.primaryCam == nil {
+	// 		continue
+	// 	}
 
-		cloud, err := r.primaryCam.NextPointCloud(ctx, nil)
-		if err != nil {
-			r.logger.Warnf("Camera error at angle %d: %v", i+1, err)
-			continue
-		}
+	// 	cloud, err := r.primaryCam.NextPointCloud(ctx, nil)
+	// 	if err != nil {
+	// 		r.logger.Warnf("Camera error at angle %d: %v", i+1, err)
+	// 		continue
+	// 	}
 
-		result, err := r.detector.DetectWithHistory(ctx, cloud, merged)
-		if err != nil {
-			r.logger.Warnf("Detection error at angle %d: %v", i+1, err)
-			continue
-		}
-		merged = result
-	}
+	// 	result, err := r.detector.DetectWithHistory(ctx, cloud, merged)
+	// 	if err != nil {
+	// 		r.logger.Warnf("Detection error at angle %d: %v", i+1, err)
+	// 		continue
+	// 	}
+	// 	merged = result
+	// }
 
 	if merged == nil {
+		r.logger.Warn("No merged detection available, trying to fallback to the last detection from Watch")
 		// Fallback to last detection from Watch.
 		if r.state.LastDetection != nil {
+			r.logger.Info("Using last detection from Watch")
 			return r.state.LastDetection, nil
 		}
 		return nil, fmt.Errorf("no detections from any scan angle")
@@ -261,64 +288,4 @@ func distBetween(a, b r3.Vector) float64 {
 			(a.Y-b.Y)*(a.Y-b.Y) +
 			(a.Z-b.Z)*(a.Z-b.Z),
 	)
-}
-
-// transformApplesToWorldFrame transforms apple poses from camera frame to world frame.
-// It modifies the apple poses in place.
-func transformApplesToWorldFrame(ctx context.Context, r *Robot, apples []applepose.Apple) error {
-	if r.primaryCam == nil {
-		return fmt.Errorf("no primary camera available")
-	}
-
-	// Get camera pose in world frame
-	cameraPoseInWorld, err := r.fsSvc.GetPose(ctx, r.primaryCam.Name().Name, "", nil, nil)
-	if err != nil {
-		return err
-	}
-
-	// Log that I am about to transform the apple poses.
-	r.logger.Infof("got camera pose in world frame: %v", cameraPoseInWorld.Pose())
-	r.logger.Infof("Transforming %d apple poses from camera frame to world frame", len(apples))
-
-	// Transform each apple's pose from camera frame to world frame.
-	for i := range apples {
-		// Log that I am about to transform the apple pose.
-		r.logger.Infof("Transforming apple %d pose from camera frame to world frame", i)
-		// Compose: world_T_camera * camera_T_apple = world_T_apple
-		apples[i].Pose = spatialmath.Compose(cameraPoseInWorld.Pose(), apples[i].Pose)
-		applePoseName := fmt.Sprintf("apple_pose_%d", i)
-		if err := viz.DrawPoses([]spatialmath.Pose{apples[i].Pose}, []string{applePoseName}, true); err != nil {
-			return err
-		}
-
-		// Transform apple point cloud to world frame.
-		if apples[i].Points != nil {
-			pc := apples[i].Points
-			pcInWorld := pointcloud.NewBasicPointCloud(pc.Size())
-			err = pointcloud.ApplyOffset(pc, cameraPoseInWorld.Pose(), pcInWorld)
-			if err != nil {
-				return fmt.Errorf("failed to transform apple point cloud: %w", err)
-			}
-			apples[i].Points = pcInWorld
-		}
-
-		// Also transform feature poses and point clouds.
-		for j := range apples[i].Features {
-			apples[i].Features[j].Pose = spatialmath.Compose(cameraPoseInWorld.Pose(), apples[i].Features[j].Pose)
-
-			// Transform feature point cloud.
-			if apples[i].Features[j].Points != nil {
-				pc := apples[i].Features[j].Points
-				pcInWorld := pointcloud.NewBasicPointCloud(pc.Size())
-				err = pointcloud.ApplyOffset(pc, cameraPoseInWorld.Pose(), pcInWorld)
-				if err != nil {
-					return fmt.Errorf("failed to transform feature point cloud: %w", err)
-				}
-				apples[i].Features[j].Points = pcInWorld
-			}
-		}
-	}
-
-	r.logger.Infof("Transformed %d apples (poses and point clouds) from camera frame to world frame", len(apples))
-	return nil
 }
