@@ -138,7 +138,7 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	// Apple gripper — required.
 	appleGripper, err := gripper.FromProvider(machine, "gripper")
 	if err != nil {
-		//~ return nil, fmt.Errorf("apple gripper (arm_mount): %w", err)
+		return nil, fmt.Errorf("apple gripper (gripper): %w", err)
 	}
 	r.appleGripper = appleGripper
 
