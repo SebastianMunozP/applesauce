@@ -6,8 +6,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/golang/geo/r3"
-
 	applepose "github.com/biotinker/applesauce/apple_pose"
 	"go.viam.com/rdk/pointcloud"
 )
@@ -55,28 +53,11 @@ func Watch(ctx context.Context, r *Robot) error {
 			continue
 		}
 
-		r.logger.Infof("Point cloud has %d points, downsampling...", cloud.Size())
-
 		// Downsample to ~30K points for faster processing
-		downsampled := pointcloud.NewBasicEmpty()
-		step := cloud.Size() / 30000
-		if step < 1 {
-			step = 1
-		}
-		i := 0
-		cloud.Iterate(0, 0, func(p r3.Vector, d pointcloud.Data) bool {
-			if i%step == 0 {
-				err := downsampled.Set(p, d)
-				if err != nil {
-					r.logger.Warnf("Failed to add point: %v", err)
-				}
-			}
-			i++
-			return true
-		})
+		// downsampled := downsamplePointCloud(r, cloud, 30000)
 
-		r.logger.Infof("Downsampled to %d points, processing...", downsampled.Size())
-		result, err := r.detector.Detect(ctx, downsampled)
+		// r.logger.Info("Processing downsampled point cloud...")
+		result, err := r.detector.Detect(ctx, cloud)
 		r.logger.Info("Detection complete")
 		if err != nil {
 			r.logger.Warnf("Detection failed: %v", err)
@@ -99,16 +80,16 @@ func Watch(ctx context.Context, r *Robot) error {
 			r.logger.Infof("Bowl detected with %d apples!", len(result.Bowl.Apples))
 
 			// Save camera-frame point clouds BEFORE transformation.
-			if err := savePointClouds(r, downsampled, result, "camera"); err != nil {
+			if err := savePointClouds(r, cloud, result, "camera"); err != nil {
 				r.logger.Warnf("Failed to save camera-frame point clouds: %v", err)
 			}
 
 			// Transform entire detection (poses + point clouds) to world frame.
-			if err := transformDetectionToWorldFrame(ctx, r, downsampled, result); err != nil {
+			if err := transformDetectionToWorldFrame(ctx, r, cloud, result); err != nil {
 				r.logger.Warnf("Failed to transform detection to world frame: %v", err)
 			} else {
 				// Save world-frame point clouds AFTER transformation.
-				if err := savePointClouds(r, downsampled, result, "world"); err != nil {
+				if err := savePointClouds(r, cloud, result, "world"); err != nil {
 					r.logger.Warnf("Failed to save world-frame point clouds: %v", err)
 				}
 			}

@@ -5,10 +5,38 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/golang/geo/r3"
+
 	applepose "github.com/biotinker/applesauce/apple_pose"
 	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/spatialmath"
 )
+
+// downsamplePointCloud downsamples a point cloud to approximately the target number of points.
+// Returns the downsampled point cloud.
+func downsamplePointCloud(r *Robot, cloud pointcloud.PointCloud, targetPoints int) pointcloud.PointCloud {
+	r.logger.Infof("Point cloud has %d points, downsampling to ~%d...", cloud.Size(), targetPoints)
+
+	downsampled := pointcloud.NewBasicEmpty()
+	step := cloud.Size() / targetPoints
+	if step < 1 {
+		step = 1
+	}
+	i := 0
+	cloud.Iterate(0, 0, func(p r3.Vector, d pointcloud.Data) bool {
+		if i%step == 0 {
+			err := downsampled.Set(p, d)
+			if err != nil {
+				r.logger.Warnf("Failed to add point: %v", err)
+			}
+		}
+		i++
+		return true
+	})
+
+	r.logger.Infof("Downsampled to %d points", downsampled.Size())
+	return downsampled
+}
 
 // transformDetectionToWorldFrame transforms the entire detection result (apple poses,
 // point clouds, and features) from camera frame to world frame. This modifies the

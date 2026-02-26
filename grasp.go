@@ -170,6 +170,13 @@ func multiAngleScan(ctx context.Context, r *Robot) (*applepose.DetectionResult, 
 			return nil, fmt.Errorf("camera: %w", err)
 		}
 		r.logger.Infof("Got point cloud with %d points", cloud.Size())
+
+		// Downsample to ~30K points for faster processing
+		// downsampled := downsamplePointCloud(r, cloud, 30000)
+
+		// r.logger.Info("Processing downsampled point cloud...")
+		// result, err := r.detector.Detect(ctx, downsampled)
+
 		r.logger.Info("Detecting apples in point cloud")
 		result, err := r.detector.Detect(ctx, cloud)
 		if err != nil {
