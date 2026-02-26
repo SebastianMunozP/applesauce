@@ -159,6 +159,10 @@ func multiAngleScan(ctx context.Context, r *Robot) (*applepose.DetectionResult, 
 			r.logger.Error("No camera available, cannot do a single detection")
 			return nil, fmt.Errorf("no camera available and no prior detection")
 		}
+		r.logger.Info("Moving primary arm to viewing position")
+		if err := r.moveArmDirectToJoints(ctx, r.primaryArm, PrimaryViewingJoints); err != nil {
+			return nil, err
+		}
 		r.logger.Info("Getting point cloud from camera")
 		cloud, err := r.primaryCam.NextPointCloud(ctx, nil)
 		if err != nil {
