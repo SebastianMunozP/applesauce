@@ -43,6 +43,11 @@ func Grasp(ctx context.Context, r *Robot) error {
 		if err := viz.DrawPoses([]spatialmath.Pose{apple.Pose}, []string{"yellow"}, true); err != nil {
 			return err
 		}
+		for _, feature := range apple.Features {
+			if err := viz.DrawPoses([]spatialmath.Pose{feature.Pose}, []string{"green"}, true); err != nil {
+				return err
+			}
+		}
 	}
 
 	// Note: Detection is already in world frame from the watch step.
@@ -161,10 +166,20 @@ func multiAngleScan(ctx context.Context, r *Robot) (*applepose.DetectionResult, 
 		}
 		r.logger.Warn("No last detection available, doing a single detection")
 
+		// Move to viewing position.
+		r.logger.Info("Moving to viewing position")
+		if err := r.moveArmDirectToJoints(ctx, r.primaryArm, PrimaryViewingJoints); err != nil {
+			return nil, fmt.Errorf("move to viewing position: %w", err)
+		}
+		r.logger.Info("Moved to viewing position")
+
+		// Detect apples.
+		r.logger.Info("Detecting apples")
 		result, err := r.detectApples(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("single detection: %w", err)
 		}
+		r.logger.Info("Detected apples")
 		return result, nil
 	}
 
