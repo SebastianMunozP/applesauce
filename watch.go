@@ -3,11 +3,16 @@ package applesauce
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"time"
 
+	"github.com/golang/geo/r3"
+
 	applepose "github.com/biotinker/applesauce/apple_pose"
+	viz "github.com/viam-labs/motion-tools/client/client"
 	"go.viam.com/rdk/pointcloud"
+	"go.viam.com/rdk/spatialmath"
 )
 
 // Watch moves both arms to their viewing positions and polls the primary camera
@@ -50,26 +55,49 @@ func Watch(ctx context.Context, r *Robot) error {
 		case <-ticker.C:
 		}
 
-		cloud, err := r.primaryCam.NextPointCloud(ctx, nil)
+		// Get primary camera point cloud in world frame.
+		worldCloud, err := r.getCameraWorldCloud(ctx, r.primaryCam)
 		if err != nil {
-			r.logger.Warnf("Camera error: %v", err)
+			r.logger.Warnf("Primary camera error: %v", err)
 			continue
 		}
 
-		// Downsample to ~30K points for faster processing
-		// downsampled := downsamplePointCloud(r, cloud, 30000)
+		// If secondary camera and viewing joints are configured, merge its cloud.
+		if SecondaryViewingJoints != nil && r.secondaryCam != nil {
+			secondaryCloud, err := r.getCameraWorldCloud(ctx, r.secondaryCam)
+			if err != nil {
+				r.logger.Warnf("Secondary camera error: %v", err)
+			} else {
+				before := worldCloud.Size()
+				secondaryCloud.Iterate(0, 0, func(p r3.Vector, d pointcloud.Data) bool {
+					if err := worldCloud.Set(p, d); err != nil {
+						r.logger.Warnf("Failed to merge point: %v", err)
+					}
+					return true
+				})
+				r.logger.Infof("Merged secondary cloud (%d points) into world cloud (%d -> %d points)",
+					secondaryCloud.Size(), before, worldCloud.Size())
+			}
+		}
 
-		// r.logger.Info("Processing downsampled point cloud...")
-		result, err := r.detector.Detect(ctx, cloud)
+		// Filter point cloud to only include points within the bowl region box.
+		worldCloud, err = filterCloudToBox(worldCloud, BowlRegionBox, r)
+		if err != nil {
+			r.logger.Warnf("Bowl region filter error: %v", err)
+			continue
+		}
+
+		// Run detection on the merged world-frame point cloud.
+		result, err := r.detector.Detect(ctx, worldCloud)
 		r.logger.Info("Detection complete")
 		if err != nil {
 			r.logger.Warnf("Detection failed: %v", err)
 			continue
 		}
 
-		// Log what we detected, even if bowl not confirmed
+		// Log what we detected, even if bowl not confirmed.
 		if len(result.Bowl.Apples) > 0 {
-			r.logger.Infof("Detected %d apple(s) but BowlDetected=%v", len(result.Bowl.Apples), result.BowlDetected)
+			r.logger.Infof("Detected %d apple(s), BowlDetected=%v", len(result.Bowl.Apples), result.BowlDetected)
 			for i, apple := range result.Bowl.Apples {
 				pos := apple.Pose.Point()
 				r.logger.Debugf("  Apple %d: center=(%.1f, %.1f, %.1f) radius=%.1fmm visible=%.0f%%",
@@ -82,22 +110,15 @@ func Watch(ctx context.Context, r *Robot) error {
 		if result.BowlDetected {
 			r.logger.Infof("Bowl detected with %d apples!", len(result.Bowl.Apples))
 
-			// Save camera-frame point clouds BEFORE transformation.
-			if err := savePointClouds(r, cloud, result, "camera"); err != nil {
-				r.logger.Warnf("Failed to save camera-frame point clouds: %v", err)
+			// Save world-frame point clouds.
+			if err := savePointClouds(r, worldCloud, result, "world"); err != nil {
+				r.logger.Warnf("Failed to save world-frame point clouds: %v", err)
 			}
 
-			// Transform entire detection (poses + point clouds) to world frame.
-			if err := transformDetectionToWorldFrame(ctx, r, cloud, result); err != nil {
-				r.logger.Warnf("Failed to transform detection to world frame: %v", err)
-			} else {
-				// Save world-frame point clouds AFTER transformation.
-				if err := savePointClouds(r, cloud, result, "world"); err != nil {
-					r.logger.Warnf("Failed to save world-frame point clouds: %v", err)
-				}
-			}
+			// Visualize the merged, filtered world-frame cloud and detection results.
+			visualizeWatch(r, worldCloud, result)
 
-			// Store the detection result (now in world frame) for grasp to use.
+			// Detection ran on world-frame data, so results are already in world frame.
 			r.state.LastDetection = result
 
 			return nil
@@ -113,14 +134,12 @@ func savePointClouds(r *Robot, cameraCloud pointcloud.PointCloud, result *applep
 		return fmt.Errorf("create output dir: %w", err)
 	}
 
-	// Save full camera point cloud (only for camera frame; world frame is handled separately)
-	if frameType == "camera" {
-		cameraPath := fmt.Sprintf("%s/camera_full_%s.pcd", outputDir, frameType)
-		if err := savePointCloudToPCD(cameraCloud, cameraPath); err != nil {
-			return fmt.Errorf("save camera cloud: %w", err)
-		}
-		r.logger.Infof("Saved %s-frame camera point cloud to %s (%d points)", frameType, cameraPath, cameraCloud.Size())
+	// Save full point cloud.
+	fullPath := fmt.Sprintf("%s/camera_full_%s.pcd", outputDir, frameType)
+	if err := savePointCloudToPCD(cameraCloud, fullPath); err != nil {
+		return fmt.Errorf("save full cloud: %w", err)
 	}
+	r.logger.Infof("Saved %s-frame point cloud to %s (%d points)", frameType, fullPath, cameraCloud.Size())
 
 	// Save individual apple point clouds.
 	for i, apple := range result.Bowl.Apples {
@@ -135,4 +154,178 @@ func savePointClouds(r *Robot, cameraCloud pointcloud.PointCloud, result *applep
 	}
 
 	return nil
+}
+
+const vizDelay = 300 * time.Millisecond
+
+// visualizeWatch draws the world-frame point cloud, bowl region box, and detection results
+// in the motion-tools visualizer.
+func visualizeWatch(r *Robot, worldCloud pointcloud.PointCloud, result *applepose.DetectionResult) {
+	if err := viz.RemoveAllSpatialObjects(); err != nil {
+		r.logger.Warnf("viz: could not clear scene (is motion-tools running?): %v", err)
+		return
+	}
+	time.Sleep(vizDelay)
+
+	// Draw the merged, filtered world-frame point cloud.
+	if err := viz.DrawPointCloud("world_cloud", worldCloud, nil); err != nil {
+		r.logger.Warnf("viz: could not draw world cloud: %v", err)
+		return
+	}
+	time.Sleep(vizDelay)
+	r.logger.Infof("viz: drew world-frame point cloud (%d points)", worldCloud.Size())
+
+	// Draw bowl region box.
+	if BowlRegionBox != nil {
+		if err := viz.DrawGeometry(BowlRegionBox, "green"); err != nil {
+			r.logger.Warnf("viz: could not draw bowl region box: %v", err)
+		}
+		time.Sleep(vizDelay)
+	}
+
+	// Draw support plane as a flat box.
+	if result.Bowl.SupportPlane != nil {
+		plane := result.Bowl.SupportPlane
+		center := plane.Center()
+		normal := plane.Normal()
+		norm := normal.Norm()
+		if norm > 1e-9 {
+			normal = normal.Mul(1.0 / norm)
+		}
+
+		var t1 r3.Vector
+		if math.Abs(normal.X) < 0.9 {
+			t1 = normal.Cross(r3.Vector{X: 1, Y: 0, Z: 0})
+		} else {
+			t1 = normal.Cross(r3.Vector{X: 0, Y: 1, Z: 0})
+		}
+		t1 = t1.Mul(1.0 / t1.Norm())
+		t2 := normal.Cross(t1)
+
+		planeCloud, err := plane.PointCloud()
+		if err == nil && planeCloud != nil && planeCloud.Size() > 0 {
+			var minT1, maxT1, minT2, maxT2 float64
+			first := true
+			planeCloud.Iterate(0, 0, func(pt r3.Vector, d pointcloud.Data) bool {
+				rel := pt.Sub(center)
+				p1 := rel.Dot(t1)
+				p2 := rel.Dot(t2)
+				if first {
+					minT1, maxT1 = p1, p1
+					minT2, maxT2 = p2, p2
+					first = false
+				} else {
+					if p1 < minT1 {
+						minT1 = p1
+					}
+					if p1 > maxT1 {
+						maxT1 = p1
+					}
+					if p2 < minT2 {
+						minT2 = p2
+					}
+					if p2 > maxT2 {
+						maxT2 = p2
+					}
+				}
+				return true
+			})
+
+			width := maxT1 - minT1
+			height := maxT2 - minT2
+			thickness := 1.0
+
+			ov := &spatialmath.OrientationVector{OX: normal.X, OY: normal.Y, OZ: normal.Z}
+			planePose := spatialmath.NewPose(center, ov)
+			planeBox, err := spatialmath.NewBox(planePose, r3.Vector{X: width, Y: height, Z: thickness}, "support_plane")
+			if err == nil {
+				if err := viz.DrawGeometry(planeBox, "gray"); err != nil {
+					r.logger.Warnf("viz: could not draw support plane: %v", err)
+				} else {
+					r.logger.Infof("viz: drew support plane (%.0f x %.0f mm) at (%.1f, %.1f, %.1f)",
+						width, height, center.X, center.Y, center.Z)
+				}
+				time.Sleep(vizDelay)
+			}
+		}
+	}
+
+	// Draw apple spheres and features.
+	for i, apple := range result.Bowl.Apples {
+		center := apple.Pose.Point()
+
+		sphere, err := spatialmath.NewSphere(
+			spatialmath.NewPoseFromPoint(center),
+			apple.Radius,
+			fmt.Sprintf("apple_%d", i),
+		)
+		if err != nil {
+			r.logger.Warnf("viz: failed to create sphere %d: %v", i, err)
+			continue
+		}
+		if err := viz.DrawGeometry(sphere, "red"); err != nil {
+			r.logger.Warnf("viz: could not draw sphere %d: %v", i, err)
+			continue
+		}
+		time.Sleep(vizDelay)
+		r.logger.Infof("viz: drew apple %d (radius=%.1fmm) at (%.1f, %.1f, %.1f)",
+			i, apple.Radius, center.X, center.Y, center.Z)
+
+		for j, f := range apple.Features {
+			fPos := f.Pose.Point()
+			color := "white"
+			switch f.Feature {
+			case applepose.FeatureStem:
+				color = "black"
+			case applepose.FeatureCalyx:
+				color = "green"
+			}
+			fSphere, err := spatialmath.NewSphere(
+				spatialmath.NewPoseFromPoint(fPos),
+				5.0,
+				fmt.Sprintf("apple_%d_feature_%d", i, j),
+			)
+			if err != nil {
+				continue
+			}
+			if err := viz.DrawGeometry(fSphere, color); err != nil {
+				continue
+			}
+			time.Sleep(vizDelay)
+		}
+	}
+
+	r.logger.Info("viz: visualization complete")
+}
+
+// filterCloudToBox filters a point cloud to only include points that fall within the given
+// bounding box geometry. If the box is nil, the cloud is returned unmodified.
+func filterCloudToBox(cloud pointcloud.PointCloud, box spatialmath.Geometry, r *Robot) (pointcloud.PointCloud, error) {
+	if box == nil {
+		r.logger.Warn("BowlRegionBox not configured; skipping point cloud filtering")
+		return cloud, nil
+	}
+
+	octree, err := pointcloud.ToBasicOctree(cloud, 0)
+	if err != nil {
+		return nil, fmt.Errorf("convert to octree for filtering: %w", err)
+	}
+
+	pts := octree.PointsCollidingWith([]spatialmath.Geometry{box}, 0)
+
+	filtered := pointcloud.NewBasicPointCloud(len(pts))
+	for _, p := range pts {
+		if d, ok := cloud.At(p.X, p.Y, p.Z); ok {
+			if err := filtered.Set(p, d); err != nil {
+				return nil, fmt.Errorf("set filtered point: %w", err)
+			}
+		} else {
+			if err := filtered.Set(p, nil); err != nil {
+				return nil, fmt.Errorf("set filtered point: %w", err)
+			}
+		}
+	}
+
+	r.logger.Infof("Filtered point cloud from %d to %d points using bowl region box", cloud.Size(), filtered.Size())
+	return filtered, nil
 }

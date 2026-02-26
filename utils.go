@@ -8,6 +8,7 @@ import (
 	"github.com/golang/geo/r3"
 
 	applepose "github.com/biotinker/applesauce/apple_pose"
+	"go.viam.com/rdk/components/camera"
 	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/spatialmath"
 )
@@ -104,6 +105,28 @@ func transformDetectionToWorldFrame(ctx context.Context, r *Robot, cameraCloud p
 
 	r.logger.Infof("Transformed %d apples (poses, point clouds, features) from camera frame to world frame", len(result.Bowl.Apples))
 	return nil
+}
+
+// getCameraWorldCloud gets a point cloud from the given camera and transforms it to world frame.
+func (r *Robot) getCameraWorldCloud(ctx context.Context, cam camera.Camera) (pointcloud.PointCloud, error) {
+	cloud, err := cam.NextPointCloud(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get point cloud from %s: %w", cam.Name().Name, err)
+	}
+
+	camPose, err := r.fsSvc.GetPose(ctx, cam.Name().Name, "", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get pose of %s in world frame: %w", cam.Name().Name, err)
+	}
+
+	worldCloud := pointcloud.NewBasicPointCloud(cloud.Size())
+	if err := pointcloud.ApplyOffset(cloud, camPose.Pose(), worldCloud); err != nil {
+		return nil, fmt.Errorf("transform %s cloud to world frame: %w", cam.Name().Name, err)
+	}
+
+	r.logger.Infof("Transformed %s cloud to world frame (%d points, camera at %v)",
+		cam.Name().Name, worldCloud.Size(), camPose.Pose().Point())
+	return worldCloud, nil
 }
 
 // savePointCloudToPCD writes a point cloud to a PCD file in binary format.

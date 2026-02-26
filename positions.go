@@ -82,4 +82,8 @@ var (
 	// CrankAxis is the unit vector along which the spiral advances.
 	// Defaults to -X (the peeler spike direction).
 	CrankAxis r3.Vector
+
+	// BowlRegionBox is a world-frame bounding box used to filter point clouds
+	// so that only points within the bowl region are passed to apple detection.
+	BowlRegionBox spatialmath.Geometry
 )
