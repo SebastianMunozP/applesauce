@@ -161,41 +161,9 @@ func multiAngleScan(ctx context.Context, r *Robot) (*applepose.DetectionResult, 
 		}
 		r.logger.Warn("No last detection available, doing a single detection")
 
-		// If we have a camera, do a single detection from the current position.
-		if r.primaryCam == nil {
-			r.logger.Error("No camera available, cannot do a single detection")
-			return nil, fmt.Errorf("no camera available and no prior detection")
-		}
-		r.logger.Info("Moving primary arm to viewing position")
-		if err := r.moveArmDirectToJoints(ctx, r.primaryArm, PrimaryViewingJoints); err != nil {
-			return nil, err
-		}
-		r.logger.Info("Getting point cloud from camera")
-		cloud, err := r.primaryCam.NextPointCloud(ctx, nil)
+		result, err := r.detectApples(ctx)
 		if err != nil {
-			r.logger.Error("Camera error, cannot do a single detection")
-			return nil, fmt.Errorf("camera: %w", err)
-		}
-		r.logger.Infof("Got point cloud with %d points", cloud.Size())
-
-		// Downsample to ~30K points for faster processing
-		// downsampled := downsamplePointCloud(r, cloud, 30000)
-
-		// r.logger.Info("Processing downsampled point cloud...")
-		// result, err := r.detector.Detect(ctx, downsampled)
-
-		r.logger.Info("Detecting apples in point cloud")
-		result, err := r.detector.Detect(ctx, cloud)
-		if err != nil {
-			r.logger.Error("Detection failed, cannot do a single detection")
-			return nil, fmt.Errorf("detection: %w", err)
-		}
-		r.logger.Infof("Detected %d apples", len(result.Bowl.Apples))
-		r.logger.Info("Transforming detection to world frame")
-		// Transform detection to world frame
-		if err := transformDetectionToWorldFrame(ctx, r, cloud, result); err != nil {
-			r.logger.Error("Failed to transform detection to world frame")
-			return nil, fmt.Errorf("transform detection to world frame: %w", err)
+			return nil, fmt.Errorf("single detection: %w", err)
 		}
 		return result, nil
 	}

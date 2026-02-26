@@ -39,72 +39,91 @@ func downsamplePointCloud(r *Robot, cloud pointcloud.PointCloud, targetPoints in
 	return downsampled
 }
 
-// transformDetectionToWorldFrame transforms the entire detection result (apple poses,
-// point clouds, and features) from camera frame to world frame. This modifies the
-// detection result in place and saves the transformed camera point cloud.
-func transformDetectionToWorldFrame(ctx context.Context, r *Robot, cameraCloud pointcloud.PointCloud, result *applepose.DetectionResult) error {
+// detectApples captures point clouds from all available cameras, merges them in world frame,
+// filters to the bowl region, runs detection, and saves/visualizes results.
+func (r *Robot) detectApples(ctx context.Context) (*applepose.DetectionResult, error) {
 	if r.primaryCam == nil {
-		return fmt.Errorf("no primary camera available")
+		return nil, fmt.Errorf("no primary camera available")
 	}
 
-	// Get camera pose in world frame
-	cameraPoseInWorld, err := r.fsSvc.GetPose(ctx, r.primaryCam.Name().Name, "", nil, nil)
+	// Get primary camera point cloud in world frame.
+	worldCloud, err := r.getCameraWorldCloud(ctx, r.primaryCam)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("primary camera: %w", err)
 	}
 
-	r.logger.Infof("Camera pose in world frame: %v", cameraPoseInWorld.Pose())
-
-	// Transform the full camera point cloud to world frame and save it directly
-	transformedCameraCloud := pointcloud.NewBasicPointCloud(cameraCloud.Size())
-	err = pointcloud.ApplyOffset(cameraCloud, cameraPoseInWorld.Pose(), transformedCameraCloud)
-	if err != nil {
-		return fmt.Errorf("failed to transform camera point cloud: %w", err)
-	}
-
-	// Save the transformed camera cloud (world frame)
-	outputDir := "pointclouds"
-	cameraWorldPath := fmt.Sprintf("%s/camera_full_world.pcd", outputDir)
-	if err := savePointCloudToPCD(transformedCameraCloud, cameraWorldPath); err != nil {
-		r.logger.Warnf("Failed to save world-frame camera cloud: %v", err)
-	} else {
-		r.logger.Infof("Saved world-frame camera point cloud to %s (%d points)", cameraWorldPath, transformedCameraCloud.Size())
-	}
-
-	// Transform each apple's pose, point cloud, and features to world frame.
-	for i := range result.Bowl.Apples {
-		// Transform apple pose
-		result.Bowl.Apples[i].Pose = spatialmath.Compose(cameraPoseInWorld.Pose(), result.Bowl.Apples[i].Pose)
-
-		// Transform apple point cloud
-		if result.Bowl.Apples[i].Points != nil {
-			pc := result.Bowl.Apples[i].Points
-			pcInWorld := pointcloud.NewBasicPointCloud(pc.Size())
-			err = pointcloud.ApplyOffset(pc, cameraPoseInWorld.Pose(), pcInWorld)
-			if err != nil {
-				return fmt.Errorf("failed to transform apple point cloud: %w", err)
-			}
-			result.Bowl.Apples[i].Points = pcInWorld
-		}
-
-		// Transform feature poses and point clouds
-		for j := range result.Bowl.Apples[i].Features {
-			result.Bowl.Apples[i].Features[j].Pose = spatialmath.Compose(cameraPoseInWorld.Pose(), result.Bowl.Apples[i].Features[j].Pose)
-
-			if result.Bowl.Apples[i].Features[j].Points != nil {
-				pc := result.Bowl.Apples[i].Features[j].Points
-				pcInWorld := pointcloud.NewBasicPointCloud(pc.Size())
-				err = pointcloud.ApplyOffset(pc, cameraPoseInWorld.Pose(), pcInWorld)
-				if err != nil {
-					return fmt.Errorf("failed to transform feature point cloud: %w", err)
+	// If secondary camera and viewing joints are configured, merge its cloud.
+	if SecondaryViewingJoints != nil && r.secondaryCam != nil {
+		secondaryCloud, err := r.getCameraWorldCloud(ctx, r.secondaryCam)
+		if err != nil {
+			r.logger.Warnf("Secondary camera error: %v", err)
+		} else {
+			before := worldCloud.Size()
+			secondaryCloud.Iterate(0, 0, func(p r3.Vector, d pointcloud.Data) bool {
+				if err := worldCloud.Set(p, d); err != nil {
+					r.logger.Warnf("Failed to merge point: %v", err)
 				}
-				result.Bowl.Apples[i].Features[j].Points = pcInWorld
+				return true
+			})
+			r.logger.Infof("Merged secondary cloud (%d points) into world cloud (%d -> %d points)",
+				secondaryCloud.Size(), before, worldCloud.Size())
+		}
+	}
+
+	// Filter point cloud to only include points within the bowl region box.
+	worldCloud, err = filterCloudToBox(worldCloud, BowlRegionBox, r)
+	if err != nil {
+		return nil, fmt.Errorf("bowl region filter: %w", err)
+	}
+
+	// Run detection on the merged world-frame point cloud.
+	result, err := r.detector.Detect(ctx, worldCloud)
+	r.logger.Info("Detection complete")
+	if err != nil {
+		return nil, fmt.Errorf("detection: %w", err)
+	}
+
+	// Save world-frame point clouds.
+	if err := savePointClouds(r, worldCloud, result, "world"); err != nil {
+		r.logger.Warnf("Failed to save world-frame point clouds: %v", err)
+	}
+
+	// Visualize the merged, filtered world-frame cloud and detection results.
+	visualizeWatch(r, worldCloud, result)
+
+	return result, nil
+}
+
+// filterCloudToBox filters a point cloud to only include points that fall within the given
+// bounding box geometry. If the box is nil, the cloud is returned unmodified.
+func filterCloudToBox(cloud pointcloud.PointCloud, box spatialmath.Geometry, r *Robot) (pointcloud.PointCloud, error) {
+	if box == nil {
+		r.logger.Warn("BowlRegionBox not configured; skipping point cloud filtering")
+		return cloud, nil
+	}
+
+	octree, err := pointcloud.ToBasicOctree(cloud, 0)
+	if err != nil {
+		return nil, fmt.Errorf("convert to octree for filtering: %w", err)
+	}
+
+	pts := octree.PointsCollidingWith([]spatialmath.Geometry{box}, 0)
+
+	filtered := pointcloud.NewBasicPointCloud(len(pts))
+	for _, p := range pts {
+		if d, ok := cloud.At(p.X, p.Y, p.Z); ok {
+			if err := filtered.Set(p, d); err != nil {
+				return nil, fmt.Errorf("set filtered point: %w", err)
+			}
+		} else {
+			if err := filtered.Set(p, nil); err != nil {
+				return nil, fmt.Errorf("set filtered point: %w", err)
 			}
 		}
 	}
 
-	r.logger.Infof("Transformed %d apples (poses, point clouds, features) from camera frame to world frame", len(result.Bowl.Apples))
-	return nil
+	r.logger.Infof("Filtered point cloud from %d to %d points using bowl region box", cloud.Size(), filtered.Size())
+	return filtered, nil
 }
 
 // getCameraWorldCloud gets a point cloud from the given camera and transforms it to world frame.

@@ -55,43 +55,9 @@ func Watch(ctx context.Context, r *Robot) error {
 		case <-ticker.C:
 		}
 
-		// Get primary camera point cloud in world frame.
-		worldCloud, err := r.getCameraWorldCloud(ctx, r.primaryCam)
+		result, err := r.detectApples(ctx)
 		if err != nil {
-			r.logger.Warnf("Primary camera error: %v", err)
-			continue
-		}
-
-		// If secondary camera and viewing joints are configured, merge its cloud.
-		if SecondaryViewingJoints != nil && r.secondaryCam != nil {
-			secondaryCloud, err := r.getCameraWorldCloud(ctx, r.secondaryCam)
-			if err != nil {
-				r.logger.Warnf("Secondary camera error: %v", err)
-			} else {
-				before := worldCloud.Size()
-				secondaryCloud.Iterate(0, 0, func(p r3.Vector, d pointcloud.Data) bool {
-					if err := worldCloud.Set(p, d); err != nil {
-						r.logger.Warnf("Failed to merge point: %v", err)
-					}
-					return true
-				})
-				r.logger.Infof("Merged secondary cloud (%d points) into world cloud (%d -> %d points)",
-					secondaryCloud.Size(), before, worldCloud.Size())
-			}
-		}
-
-		// Filter point cloud to only include points within the bowl region box.
-		worldCloud, err = filterCloudToBox(worldCloud, BowlRegionBox, r)
-		if err != nil {
-			r.logger.Warnf("Bowl region filter error: %v", err)
-			continue
-		}
-
-		// Run detection on the merged world-frame point cloud.
-		result, err := r.detector.Detect(ctx, worldCloud)
-		r.logger.Info("Detection complete")
-		if err != nil {
-			r.logger.Warnf("Detection failed: %v", err)
+			r.logger.Warnf("Detection error: %v", err)
 			continue
 		}
 
@@ -109,18 +75,8 @@ func Watch(ctx context.Context, r *Robot) error {
 
 		if result.BowlDetected {
 			r.logger.Infof("Bowl detected with %d apples!", len(result.Bowl.Apples))
-
-			// Save world-frame point clouds.
-			if err := savePointClouds(r, worldCloud, result, "world"); err != nil {
-				r.logger.Warnf("Failed to save world-frame point clouds: %v", err)
-			}
-
-			// Visualize the merged, filtered world-frame cloud and detection results.
-			visualizeWatch(r, worldCloud, result)
-
 			// Detection ran on world-frame data, so results are already in world frame.
 			r.state.LastDetection = result
-
 			return nil
 		}
 	}
@@ -296,36 +252,4 @@ func visualizeWatch(r *Robot, worldCloud pointcloud.PointCloud, result *applepos
 	}
 
 	r.logger.Info("viz: visualization complete")
-}
-
-// filterCloudToBox filters a point cloud to only include points that fall within the given
-// bounding box geometry. If the box is nil, the cloud is returned unmodified.
-func filterCloudToBox(cloud pointcloud.PointCloud, box spatialmath.Geometry, r *Robot) (pointcloud.PointCloud, error) {
-	if box == nil {
-		r.logger.Warn("BowlRegionBox not configured; skipping point cloud filtering")
-		return cloud, nil
-	}
-
-	octree, err := pointcloud.ToBasicOctree(cloud, 0)
-	if err != nil {
-		return nil, fmt.Errorf("convert to octree for filtering: %w", err)
-	}
-
-	pts := octree.PointsCollidingWith([]spatialmath.Geometry{box}, 0)
-
-	filtered := pointcloud.NewBasicPointCloud(len(pts))
-	for _, p := range pts {
-		if d, ok := cloud.At(p.X, p.Y, p.Z); ok {
-			if err := filtered.Set(p, d); err != nil {
-				return nil, fmt.Errorf("set filtered point: %w", err)
-			}
-		} else {
-			if err := filtered.Set(p, nil); err != nil {
-				return nil, fmt.Errorf("set filtered point: %w", err)
-			}
-		}
-	}
-
-	r.logger.Infof("Filtered point cloud from %d to %d points using bowl region box", cloud.Size(), filtered.Size())
-	return filtered, nil
 }
