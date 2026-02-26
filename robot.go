@@ -21,6 +21,7 @@ import (
 	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/robot"
+	"go.viam.com/rdk/robot/framesystem"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/spatialmath"
 )
@@ -48,6 +49,7 @@ type Robot struct {
 
 	// Services
 	motion motion.Service
+	fsSvc  framesystem.Service
 
 	// Detection
 	detector *applepose.Detector
@@ -60,12 +62,12 @@ type Robot struct {
 	PlansDir string
 
 	// Cached trajectories — planned once via DoPlan, reused via DoExecute.
-	crankSpiralTrajectory   motionplan.Trajectory
-	crankRetractTrajectory  motionplan.Trajectory
-	leverDescentTrajectory  motionplan.Trajectory
-	leverPressTrajectory    motionplan.Trajectory
-	leverReleaseTrajectory  motionplan.Trajectory
-	leverRetractTrajectory  motionplan.Trajectory
+	crankSpiralTrajectory  motionplan.Trajectory
+	crankRetractTrajectory motionplan.Trajectory
+	leverDescentTrajectory motionplan.Trajectory
+	leverPressTrajectory   motionplan.Trajectory
+	leverReleaseTrajectory motionplan.Trajectory
+	leverRetractTrajectory motionplan.Trajectory
 }
 
 // PeelingState tracks the state of the current peeling cycle.
@@ -113,10 +115,10 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 		state:   &PeelingState{},
 	}
 
-	// Primary arm (xarm7) — required.
-	primaryArm, err := arm.FromProvider(machine, "xarm7")
+	// Primary arm (apple-arm) — required.
+	primaryArm, err := arm.FromProvider(machine, "apple-arm")
 	if err != nil {
-		return nil, fmt.Errorf("primary arm (xarm7): %w", err)
+		return nil, fmt.Errorf("primary arm (apple-arm): %w", err)
 	}
 	r.primaryArm = primaryArm
 
@@ -169,6 +171,12 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	}
 	r.motion = motionSvc
 
+	r.fsSvc, err = framesystem.FromProvider(machine)
+	if err != nil {
+		logger.Error(err)
+		return nil, fmt.Errorf("framesystem service: %w", err)
+	}
+
 	// Apple pose detector.
 	r.detector = applepose.NewDetector(nil)
 
@@ -183,7 +191,7 @@ func (r *Robot) linearMoveReq(componentName string, dest spatialmath.Pose, world
 		{Frame1: componentName, Frame2: "peeler"},
 	}
 	switch componentName {
-	case "xarm7":
+	case "apple-arm":
 		allows = append(allows, motionplan.CollisionSpecificationAllowedFrameCollisions{
 			Frame1: "applegripper", Frame2: "peeler",
 		})
@@ -229,9 +237,13 @@ func (r *Robot) moveFree(ctx context.Context, componentName string, dest spatial
 		ComponentName: componentName,
 		Destination:   referenceframe.NewPoseInFrame("world", dest),
 		WorldState:    worldState,
-		//~ Extra: map[string]interface{}{
-			//~ "lock_nonmoving_joints": true,
-		//~ },
+		Constraints: &motionplan.Constraints{
+			CollisionSpecification: []motionplan.CollisionSpecification{
+				{Allows: []motionplan.CollisionSpecificationAllowedFrameCollisions{
+					{Frame1: "applegripper", Frame2: "^obstacle_apple_.*$"},
+				}},
+			},
+		},
 	})
 	return err
 }
@@ -342,6 +354,20 @@ func (r *Robot) confirmSecondaryArmAtPose(ctx context.Context, goal spatialmath.
 		return fmt.Errorf("secondary arm not at goal pose (%.1fmm away)", dist)
 	}
 	return nil
+}
+
+// moveArmDirectToJoints moves an arm directly to joint positions without using
+// the motion service. This bypasses motion planning and obstacle avoidance.
+// Use this for simple moves when the motion service is unavailable or problematic.
+func (r *Robot) moveArmDirectToJoints(ctx context.Context, armComponent arm.Arm, joints []referenceframe.Input) error {
+	if joints == nil {
+		return fmt.Errorf("cannot move to nil joint positions (position not yet recorded)")
+	}
+	if armComponent == nil {
+		return fmt.Errorf("arm component is nil")
+	}
+
+	return armComponent.MoveToJointPositions(ctx, joints, nil)
 }
 
 // doPlan calls the motion service's DoPlan DoCommand to generate a trajectory
