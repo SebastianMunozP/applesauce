@@ -230,6 +230,30 @@ func (r *Robot) moveLinear(ctx context.Context, componentName string, dest spati
 	return r.doExecute(ctx, traj)
 }
 
+// moveFreeForGrasp moves a component to the destination pose, allowing collisions with the obstacleToGrasp.
+func (r *Robot) moveFreeForGrasp(ctx context.Context, componentName string, dest spatialmath.Pose, worldState *referenceframe.WorldState) error {
+	// Build the allowed collisions dynamically
+	var allowed []motionplan.CollisionSpecificationAllowedFrameCollisions
+	for obstacle, _ := range worldState.ObstacleNames() {
+		allowed = append(allowed, motionplan.CollisionSpecificationAllowedFrameCollisions{
+			Frame1: "applegripper",
+			Frame2: obstacle,
+		})
+	}
+
+	_, err := r.motion.Move(ctx, motion.MoveReq{
+		ComponentName: componentName,
+		Destination:   referenceframe.NewPoseInFrame("world", dest),
+		WorldState:    worldState,
+		Constraints: &motionplan.Constraints{
+			CollisionSpecification: []motionplan.CollisionSpecification{
+				{Allows: allowed},
+			},
+		},
+	})
+	return err
+}
+
 // moveFree moves a component to the destination pose with no path constraints.
 // The motion planner chooses the optimal collision-free path.
 func (r *Robot) moveFree(ctx context.Context, componentName string, dest spatialmath.Pose, worldState *referenceframe.WorldState) error {
@@ -237,13 +261,6 @@ func (r *Robot) moveFree(ctx context.Context, componentName string, dest spatial
 		ComponentName: componentName,
 		Destination:   referenceframe.NewPoseInFrame("world", dest),
 		WorldState:    worldState,
-		Constraints: &motionplan.Constraints{
-			CollisionSpecification: []motionplan.CollisionSpecification{
-				{Allows: []motionplan.CollisionSpecificationAllowedFrameCollisions{
-					{Frame1: "applegripper", Frame2: "^obstacle_apple_.*$"},
-				}},
-			},
-		},
 	})
 	return err
 }

@@ -38,9 +38,8 @@ func Grasp(ctx context.Context, r *Robot) error {
 	}
 
 	// Visualize the detected apples.
-	for i, apple := range detection.Bowl.Apples {
-		applePoseName := fmt.Sprintf("grasp_apple_pose_%d", i)
-		if err := viz.DrawPoses([]spatialmath.Pose{apple.Pose}, []string{applePoseName}, true); err != nil {
+	for _, apple := range detection.Bowl.Apples {
+		if err := viz.DrawPoses([]spatialmath.Pose{apple.Pose}, []string{"yellow"}, true); err != nil {
 			return err
 		}
 	}
@@ -72,8 +71,7 @@ func Grasp(ctx context.Context, r *Robot) error {
 			downOrientation,
 		)
 
-		approachPoseName := fmt.Sprintf("approach_pose_%d", attempt)
-		if err := viz.DrawPoses([]spatialmath.Pose{approachPose}, []string{approachPoseName}, true); err != nil {
+		if err := viz.DrawPoses([]spatialmath.Pose{approachPose}, []string{"blue"}, true); err != nil {
 			return err
 		}
 
@@ -92,8 +90,13 @@ func Grasp(ctx context.Context, r *Robot) error {
 			r3.Vector{X: appleCenter.X, Y: appleCenter.Y, Z: appleCenter.Z + graspFinalOffsetMm},
 			downOrientation,
 		)
-		if err := r.moveLinear(ctx, r.primaryArm.Name().Name, graspPose, worldState, 1); err != nil {
-			r.logger.Warnf("Failed linear descent: %v", err)
+
+		if err := viz.DrawPoses([]spatialmath.Pose{graspPose}, []string{"red"}, true); err != nil {
+			return err
+		}
+
+		if err := r.moveFreeForGrasp(ctx, r.primaryArm.Name().Name, graspPose, worldState); err != nil {
+			r.logger.Warnf("Failed move for grasp: %v", err)
 			continue
 		}
 
