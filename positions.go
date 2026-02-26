@@ -22,9 +22,10 @@ var (
 	}
 
 	// SecondaryViewingJoints is the joint position for the secondary arm
-	// to view the apple in the gripper.
-	// STUB: needs separate recording session.
-	SecondaryViewingJoints []referenceframe.Input
+	// to view the apple in the gripper. Recorded 2026-02-26.
+	SecondaryViewingJoints = []referenceframe.Input{
+		-2.503503, 0.622075, 2.234387, -2.208932, -1.992098, 3.766498,
+	}
 
 	// RemoveAppleApproachJoints is the joint position for the primary arm
 	// to approach the peeled apple on the peeler before linearly descending.
