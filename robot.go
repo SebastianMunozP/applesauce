@@ -175,28 +175,51 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	return r, nil
 }
 
-// moveLinear moves a component to the destination pose using a linear constraint.
-// The path will stay within lineToleranceMm of a straight line and 2 degrees of orientation.
-// An optional collSpecs parameter allows specific frame pairs to ignore collisions.
-func (r *Robot) moveLinear(ctx context.Context, componentName string, dest spatialmath.Pose, worldState *referenceframe.WorldState, lineToleranceMm float64, collSpecs ...motionplan.CollisionSpecification) error {
-	constraints := motionplan.NewConstraints(
-		[]motionplan.LinearConstraint{{
-			LineToleranceMm:          lineToleranceMm,
-			OrientationToleranceDegs: 3.0,
-		}},
-		nil, nil, collSpecs,
-	)
+// linearMoveReq builds a MoveReq for a linear-constrained move. It automatically
+// adds a collision specification allowing the moving arm (and its gripper) to
+// collide with the "peeler" obstacle defined in the robot config.
+func (r *Robot) linearMoveReq(componentName string, dest spatialmath.Pose, worldState *referenceframe.WorldState, lineToleranceMm float64, collSpecs ...motionplan.CollisionSpecification) motion.MoveReq {
+	allows := []motionplan.CollisionSpecificationAllowedFrameCollisions{
+		{Frame1: componentName, Frame2: "peeler"},
+	}
+	switch componentName {
+	case "xarm7":
+		allows = append(allows, motionplan.CollisionSpecificationAllowedFrameCollisions{
+			Frame1: "applegripper", Frame2: "peeler",
+		})
+	case "peeling-arm":
+		allows = append(allows, motionplan.CollisionSpecificationAllowedFrameCollisions{
+			Frame1: "peeling-gripper", Frame2: "peeler",
+		})
+	}
+	allSpecs := append([]motionplan.CollisionSpecification{{Allows: allows}}, collSpecs...)
 
-	_, err := r.motion.Move(ctx, motion.MoveReq{
+	return motion.MoveReq{
 		ComponentName: componentName,
 		Destination:   referenceframe.NewPoseInFrame("world", dest),
 		WorldState:    worldState,
-		Constraints:   constraints,
+		Constraints: motionplan.NewConstraints(
+			[]motionplan.LinearConstraint{{
+				LineToleranceMm:          lineToleranceMm,
+				OrientationToleranceDegs: 3.0,
+			}},
+			nil, nil, allSpecs,
+		),
 		Extra: map[string]interface{}{
 			"lock_nonmoving_joints": true,
 		},
-	})
-	return err
+	}
+}
+
+// moveLinear plans and executes a linear-constrained move to the destination pose.
+// An optional collSpecs parameter allows specific frame pairs to ignore collisions.
+func (r *Robot) moveLinear(ctx context.Context, componentName string, dest spatialmath.Pose, worldState *referenceframe.WorldState, lineToleranceMm float64, collSpecs ...motionplan.CollisionSpecification) error {
+	req := r.linearMoveReq(componentName, dest, worldState, lineToleranceMm, collSpecs...)
+	traj, err := r.doPlan(ctx, req)
+	if err != nil {
+		return err
+	}
+	return r.doExecute(ctx, traj)
 }
 
 // moveFree moves a component to the destination pose with no path constraints.
@@ -206,9 +229,9 @@ func (r *Robot) moveFree(ctx context.Context, componentName string, dest spatial
 		ComponentName: componentName,
 		Destination:   referenceframe.NewPoseInFrame("world", dest),
 		WorldState:    worldState,
-		Extra: map[string]interface{}{
-			"lock_nonmoving_joints": true,
-		},
+		//~ Extra: map[string]interface{}{
+			//~ "lock_nonmoving_joints": true,
+		//~ },
 	})
 	return err
 }
@@ -217,8 +240,8 @@ func (r *Robot) moveFree(ctx context.Context, componentName string, dest spatial
 // which plans a collision-free path that respects configured obstacles.
 // Returns an error if joints are nil (stub guard).
 //
-// The motion service requires goal inputs for ALL components with nonzero DOF,
-// so we fetch current inputs for every component and only override the target.
+// Uses doPlan to generate a trajectory, then filters it to only include input
+// changes for the target component before executing via doExecute.
 func (r *Robot) moveToJoints(ctx context.Context, componentName string, joints []referenceframe.Input) error {
 	if joints == nil {
 		return fmt.Errorf("cannot move to nil joint positions (position not yet recorded)")
@@ -228,7 +251,6 @@ func (r *Robot) moveToJoints(ctx context.Context, componentName string, joints [
 	if err != nil {
 		return fmt.Errorf("get current inputs: %w", err)
 	}
-	fmt.Println("currentInputs", currentInputs)
 
 	configuration := make(map[string]interface{}, len(currentInputs))
 	for name, inputs := range currentInputs {
@@ -245,9 +267,8 @@ func (r *Robot) moveToJoints(ctx context.Context, componentName string, joints [
 		goalVals[i] = v
 	}
 	configuration[componentName] = goalVals
-	fmt.Println("goal inputs", configuration)
 
-	ret, err := r.motion.Move(ctx, motion.MoveReq{
+	req := motion.MoveReq{
 		ComponentName: componentName,
 		Extra: map[string]interface{}{
 			"lock_nonmoving_joints": true,
@@ -255,10 +276,23 @@ func (r *Robot) moveToJoints(ctx context.Context, componentName string, joints [
 				"configuration": configuration,
 			},
 		},
-	})
-	fmt.Println(ret)
-	fmt.Println(err)
-	return err
+	}
+
+	traj, err := r.doPlan(ctx, req)
+	if err != nil {
+		return fmt.Errorf("moveToJoints plan: %w", err)
+	}
+
+	// Filter trajectory to only include inputs for the target component.
+	for i, step := range traj {
+		filtered := make(map[string][]referenceframe.Input, 1)
+		if inputs, ok := step[componentName]; ok {
+			filtered[componentName] = inputs
+		}
+		traj[i] = filtered
+	}
+
+	return r.doExecute(ctx, traj)
 }
 
 // secondaryArmJointTolerance is the maximum acceptable joint deviation (radians)
@@ -291,22 +325,23 @@ func (r *Robot) confirmSecondaryArmAt(ctx context.Context, expected []referencef
 	return nil
 }
 
-// confirmSecondaryArmMoved verifies the secondary arm actually moved by comparing
-// current joints against a pre-move snapshot. Returns an error if all joints are unchanged.
-func (r *Robot) confirmSecondaryArmMoved(ctx context.Context, before []referenceframe.Input) error {
-	after, err := r.secondaryArmJoints(ctx)
+// secondaryArmPoseTolerance is the maximum acceptable position deviation (mm)
+// when verifying the secondary arm reached its goal pose.
+const secondaryArmPoseTolerance = 5.0
+
+// confirmSecondaryArmAtPose verifies the secondary arm is at the goal pose
+// (within tolerance). This catches cases where the lite6 silently drops a
+// motion command without returning an error.
+func (r *Robot) confirmSecondaryArmAtPose(ctx context.Context, goal spatialmath.Pose) error {
+	poseInFrame, err := r.motion.GetPose(ctx, "secondary-arm", "world", nil, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("get secondary arm pose: %w", err)
 	}
-	for i := range before {
-		if i >= len(after) {
-			break
-		}
-		if math.Abs(after[i]-before[i]) > secondaryArmJointTolerance {
-			return nil // at least one joint moved
-		}
+	delta := spatialmath.PoseBetween(poseInFrame.Pose(), goal)
+	if dist := delta.Point().Norm(); dist > secondaryArmPoseTolerance {
+		return fmt.Errorf("secondary arm not at goal pose (%.1fmm away)", dist)
 	}
-	return fmt.Errorf("secondary arm did not move: all joints unchanged after motion command")
+	return nil
 }
 
 // doPlan calls the motion service's DoPlan DoCommand to generate a trajectory
@@ -369,20 +404,7 @@ func (r *Robot) cachedLinearMove(ctx context.Context, componentName string, dest
 	}
 	if *traj == nil {
 		r.logger.Infof("Planning %s (first run; will be cached)", cacheFile)
-		req := motion.MoveReq{
-			ComponentName: componentName,
-			Destination:   referenceframe.NewPoseInFrame("world", dest),
-			Constraints: motionplan.NewConstraints(
-				[]motionplan.LinearConstraint{{
-					LineToleranceMm:          1.0,
-					OrientationToleranceDegs: 2.0,
-				}},
-				nil, nil, nil,
-			),
-			Extra: map[string]interface{}{
-				"lock_nonmoving_joints": true,
-			},
-		}
+		req := r.linearMoveReq(componentName, dest, nil, 1.0)
 		planned, err := r.doPlan(ctx, req)
 		if err != nil {
 			return err

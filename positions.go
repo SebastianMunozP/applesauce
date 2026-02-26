@@ -26,6 +26,13 @@ var (
 	// STUB: needs separate recording session.
 	SecondaryViewingJoints []referenceframe.Input
 
+	// RemoveAppleApproachJoints is the joint position for the primary arm
+	// to approach the peeled apple on the peeler before linearly descending.
+	// Recorded 2026-02-26
+	RemoveAppleApproachJoints = []referenceframe.Input{
+		-1.354595, -0.679198, -4.706562, 2.271673, 0.941830, 2.145737, 0.403602,
+	}
+
 	// PrimaryBowlScanAngles is a set of joint positions for the primary arm
 	// to scan the bowl from multiple angles during grasp planning.
 	// STUB: needs recording of 3-4 viewpoints around the bowl.
@@ -53,8 +60,11 @@ var (
 	)
 
 	// WasteBinPose is the world-frame pose of the waste bin for cores/scraps.
-	// STUB: measure waste bin location.
-	WasteBinPose spatialmath.Pose
+	// Recorded 2026-02-26.
+	WasteBinPose spatialmath.Pose = spatialmath.NewPose(
+		r3.Vector{X: 223.607667, Y: 286.245697, Z: 1370.946137},
+		&spatialmath.OrientationVectorDegrees{OX: 0.074031, OY: -0.004713, OZ: -0.997245, Theta: 41.535133},
+	)
 
 	// SecondaryReleaseLeverApproach is the world-frame pose for the secondary arm
 	// to approach the release lever. Recorded 2026-02-25.
@@ -72,10 +82,10 @@ var (
 
 	// PeelerCorePose is the world-frame pose of the apple core on the peeler
 	// after peeling is complete (where to grab it from).
-	// Recorded 2026-02-25.
+	// Recorded 2026-02-26.
 	PeelerCorePose spatialmath.Pose = spatialmath.NewPose(
-		r3.Vector{X: 97.651240, Y: 433.337759, Z: 1199.124982},
-		&spatialmath.OrientationVectorDegrees{OX: 0.997678, OY: 0.023451, OZ: -0.063949, Theta: 26.266296},
+		r3.Vector{X: 90.823915, Y: 463.229148, Z: 1170.803074},
+		&spatialmath.OrientationVectorDegrees{OX: 0.999315, OY: 0.036202, OZ: -0.007734, Theta: -10.991430},
 	)
 
 	// PeelerAppleGrabPose is the world-frame pose where the primary arm

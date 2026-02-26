@@ -58,14 +58,14 @@ func RemoveApple(ctx context.Context, r *Robot) error {
 		return fmt.Errorf("open gripper for apple removal: %w", err)
 	}
 
-	// Move 150mm above the grab pose.
-	abovePose := spatialmath.NewPose(
-		r3.Vector{X: grabPoint.X, Y: grabPoint.Y, Z: grabPoint.Z + 150},
-		grabOrientation,
-	)
-	r.logger.Info("Moving above peeled apple")
-	if err := r.moveFree(ctx, "xarm7", abovePose, nil); err != nil {
-		return fmt.Errorf("move above apple grab pose: %w", err)
+	// Move to recorded approach joints above the peeler grab pose.
+	if RemoveAppleApproachJoints == nil {
+		r.logger.Warn("RemoveAppleApproachJoints not recorded (stub); skipping apple removal")
+		return nil
+	}
+	r.logger.Info("Moving to apple removal approach joints")
+	if err := r.moveToJoints(ctx, "xarm7", RemoveAppleApproachJoints); err != nil {
+		return fmt.Errorf("move to apple removal approach joints: %w", err)
 	}
 
 	// Linear descent to the grab pose.
@@ -118,13 +118,13 @@ func ResetMachine(ctx context.Context, r *Robot) error {
 		r.logger.Warnf("Retract: %v", err)
 	}
 
-	// Step 3: Primary arm deposits core and returns to viewing position.
+	//~ // Step 3: Primary arm deposits core and returns to viewing position.
 	if err := depositCoreAndReturn(ctx, r); err != nil {
 		r.logger.Warnf("Core deposit: %v", err)
 	}
 
-	// Reset state for next cycle.
-	r.resetState()
+	//~ // Reset state for next cycle.
+	//~ r.resetState()
 	r.logger.Info("Machine reset complete")
 	return nil
 }
@@ -141,7 +141,7 @@ func grabCore(ctx context.Context, r *Robot) error {
 
 	// Approach from -X direction.
 	approachPose := spatialmath.NewPose(
-		r3.Vector{X: corePoint.X - 100, Y: corePoint.Y, Z: corePoint.Z},
+		r3.Vector{X: corePoint.X - 120, Y: corePoint.Y, Z: corePoint.Z},
 		approachOrientation,
 	)
 	if err := r.moveFree(ctx, "xarm7", approachPose, nil); err != nil {
@@ -153,7 +153,7 @@ func grabCore(ctx context.Context, r *Robot) error {
 	}
 
 	corePose := spatialmath.NewPose(corePoint, approachOrientation)
-	if err := r.moveLinear(ctx, "xarm7", corePose, nil, 1); err != nil {
+	if err := r.moveLinear(ctx, "xarm7", corePose, nil, 2); err != nil {
 		return fmt.Errorf("reach core: %w", err)
 	}
 
@@ -177,54 +177,38 @@ func pressReleaseLever(ctx context.Context, r *Robot) error {
 	aboveApproach := poseAbove(SecondaryReleaseLeverApproach, 200)
 
 	r.logger.Info("Moving above lever approach")
-	before, err := r.secondaryArmJoints(ctx)
-	if err != nil {
-		return err
-	}
 	if err := r.moveFree(ctx, "secondary-arm", aboveApproach, nil); err != nil {
 		return fmt.Errorf("move above lever approach: %w", err)
 	}
-	if err := r.confirmSecondaryArmMoved(ctx, before); err != nil {
+	if err := r.confirmSecondaryArmAtPose(ctx, aboveApproach); err != nil {
 		return fmt.Errorf("move above lever approach: %w", err)
 	}
 
-	before, err = r.secondaryArmJoints(ctx)
-	if err != nil {
-		return err
-	}
 	if err := r.cachedLinearMove(ctx, "secondary-arm", SecondaryReleaseLeverApproach,
 		&r.leverDescentTrajectory, "lever_descent.json"); err != nil {
 		return fmt.Errorf("descend to lever: %w", err)
 	}
-	if err := r.confirmSecondaryArmMoved(ctx, before); err != nil {
+	if err := r.confirmSecondaryArmAtPose(ctx, SecondaryReleaseLeverApproach); err != nil {
 		return fmt.Errorf("descend to lever: %w", err)
 	}
 
 	if SecondaryReleaseLeverPressPose == nil {
 		r.logger.Warn("SecondaryReleaseLeverPressPose not configured (stub); lever press simulated")
-		before, err = r.secondaryArmJoints(ctx)
-		if err != nil {
-			return err
-		}
 		if err := r.cachedLinearMove(ctx, "secondary-arm", aboveApproach,
 			&r.leverRetractTrajectory, "lever_retract.json"); err != nil {
 			r.logger.Warnf("retract from lever approach: %v", err)
-		} else if err := r.confirmSecondaryArmMoved(ctx, before); err != nil {
+		} else if err := r.confirmSecondaryArmAtPose(ctx, aboveApproach); err != nil {
 			r.logger.Warnf("retract from lever approach: %v", err)
 		}
 		return nil
 	}
 
 	r.logger.Info("Pressing release lever")
-	before, err = r.secondaryArmJoints(ctx)
-	if err != nil {
-		return err
-	}
 	if err := r.cachedLinearMove(ctx, "secondary-arm", SecondaryReleaseLeverPressPose,
 		&r.leverPressTrajectory, "lever_press.json"); err != nil {
 		return fmt.Errorf("press lever: %w", err)
 	}
-	if err := r.confirmSecondaryArmMoved(ctx, before); err != nil {
+	if err := r.confirmSecondaryArmAtPose(ctx, SecondaryReleaseLeverPressPose); err != nil {
 		return fmt.Errorf("press lever: %w", err)
 	}
 
@@ -232,27 +216,19 @@ func pressReleaseLever(ctx context.Context, r *Robot) error {
 		r.logger.Warnf("Spike retraction: %v", err)
 	}
 
-	before, err = r.secondaryArmJoints(ctx)
-	if err != nil {
-		return err
-	}
 	if err := r.cachedLinearMove(ctx, "secondary-arm", SecondaryReleaseLeverApproach,
 		&r.leverReleaseTrajectory, "lever_release.json"); err != nil {
 		return fmt.Errorf("release lever: %w", err)
 	}
-	if err := r.confirmSecondaryArmMoved(ctx, before); err != nil {
+	if err := r.confirmSecondaryArmAtPose(ctx, SecondaryReleaseLeverApproach); err != nil {
 		return fmt.Errorf("release lever: %w", err)
 	}
 
-	before, err = r.secondaryArmJoints(ctx)
-	if err != nil {
-		return err
-	}
 	if err := r.cachedLinearMove(ctx, "secondary-arm", aboveApproach,
 		&r.leverRetractTrajectory, "lever_retract.json"); err != nil {
 		return fmt.Errorf("retract from lever: %w", err)
 	}
-	if err := r.confirmSecondaryArmMoved(ctx, before); err != nil {
+	if err := r.confirmSecondaryArmAtPose(ctx, aboveApproach); err != nil {
 		return fmt.Errorf("retract from lever: %w", err)
 	}
 
@@ -339,10 +315,24 @@ func returnSecondaryArm(ctx context.Context, r *Robot) error {
 // depositCoreAndReturn moves the primary arm to the waste bin, drops the core,
 // and returns to the viewing position.
 func depositCoreAndReturn(ctx context.Context, r *Robot) error {
+	// re-grab to increase pressure on core
+	if _, err := r.appleGripper.Grab(ctx, nil); err != nil {
+		return fmt.Errorf("grab core: %w", err)
+	}
+	corePoint := PeelerCorePose.Point()
+	approachOrientation := &spatialmath.OrientationVectorDegrees{OX: 1, Theta: 0}
+
+	// Approach from -X direction.
+	approachPose := spatialmath.NewPose(
+		r3.Vector{X: corePoint.X - 120, Y: corePoint.Y, Z: corePoint.Z},
+		approachOrientation,
+	)
+	if err := r.moveLinear(ctx, "xarm7", approachPose, nil, 2); err != nil {
+		return fmt.Errorf("retreat core: %w", err)
+	}
 	if WasteBinPose != nil {
 		r.logger.Info("Depositing core in waste bin")
-		aboveBin := poseAbove(WasteBinPose, 100)
-		if err := r.moveFree(ctx, "xarm7", aboveBin, nil); err != nil {
+		if err := r.moveFree(ctx, "xarm7", WasteBinPose, nil); err != nil {
 			return fmt.Errorf("move to waste bin: %w", err)
 		}
 
