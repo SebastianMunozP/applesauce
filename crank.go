@@ -89,6 +89,20 @@ func Crank(ctx context.Context, r *Robot) error {
 		r.logger.Info("Executing cached crank spiral trajectory")
 	}
 
+	// Increase arm speed before pierce
+	r.logger.Infof("Increasing arm speed before pierce")
+	if _, err := r.primaryArm.DoCommand(ctx, map[string]interface{}{"set_speed": 30}); err != nil {
+		return fmt.Errorf("failed to increase gripper and acceleration speed: %w", err)
+	}
+
+	defer func() {
+		// Decrease arm speed before returning
+		r.logger.Infof("Decreasing arm speed before returning")
+		if _, err := r.primaryArm.DoCommand(ctx, map[string]interface{}{"set_speed": 30}); err != nil {
+			r.logger.Infof("Failed to reset arm speed: %v", err)
+		}
+	}()
+
 	if err := r.doExecute(ctx, r.crankSpiralTrajectory); err != nil {
 		return fmt.Errorf("execute crank spiral: %w", err)
 	}
