@@ -86,4 +86,19 @@ var (
 	// BowlRegionBox is a world-frame bounding box used to filter point clouds
 	// so that only points within the bowl region are passed to apple detection.
 	BowlRegionBox spatialmath.Geometry
+
+	PeelAbovePose = spatialmath.NewPose(
+		r3.Vector{X: -20.0367459504155, Y: 455.09934339883876, Z: 489.76104212680764},
+		&spatialmath.OrientationVector{OX: 0.007941793676801446, OY: -0.04479245698646934, OZ: -0.9989647459797121, Theta: -1.4246285716599694},
+	)
+
+	PeelAlignPose = spatialmath.NewPose(
+		r3.Vector{X: -5.488100718055788, Y: 464.83175452406, Z: 255.7844815950868},
+		&spatialmath.OrientationVector{OX: 0.007941793676801446, OY: -0.04479245698646934, OZ: -0.9989647459797121, Theta: -1.4246285716599694},
+	)
+
+	PeelPiercePose = spatialmath.NewPose(
+		r3.Vector{X: -45, Y: 464.83175452406, Z: 255.7844815950868},
+		&spatialmath.OrientationVector{OX: 0.007941793676801446, OY: -0.04479245698646934, OZ: -0.9989647459797121, Theta: -1.4246285716599694},
+	)
 )

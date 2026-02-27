@@ -17,16 +17,17 @@ import (
 )
 
 var steps = map[string]func(context.Context, *applesauce.Robot) error{
-	"grasp":    applesauce.Grasp,
-	"identify": applesauce.IdentifyFeatures,
-	"peel":     applesauce.Peel,
-	"crank":    applesauce.Crank,
-	"remove":   applesauce.RemoveApple,
-	"reset":    applesauce.ResetMachine,
-	"retract":  applesauce.Retract,
+	"grasp":          applesauce.Grasp,
+	"identify":       applesauce.IdentifyFeatures,
+	"peel":           applesauce.Peel,
+	"peel-hardcoded": applesauce.PeelHardcoded,
+	"crank":          applesauce.Crank,
+	"remove":         applesauce.RemoveApple,
+	"reset":          applesauce.ResetMachine,
+	"retract":        applesauce.Retract,
 }
 
-const validSteps = "watch, grasp, identify, peel, crank, remove, reset, retract"
+const validSteps = "watch, grasp, identify, peel, peel-hardcoded, crank, remove, reset, retract"
 
 func main() {
 	credsPath := flag.String("creds", "", "path to robot credentials JSON file")
