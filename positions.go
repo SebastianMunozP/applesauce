@@ -106,4 +106,9 @@ var (
 		r3.Vector{X: -334.8481615183904, Y: 470, Z: 170},
 		&spatialmath.OrientationVector{OX: 0.006, OY: -0.04411434417065586, OZ: -0.9989968896575422, Theta: -1.4286907032643186},
 	)
+
+	RemoveAboveBowlPose = spatialmath.NewPose(
+		r3.Vector{X: 471.08571546332536, Y: -333.18676388188146, Z: 349.72008434602566},
+		&spatialmath.OrientationVector{OX: 0.0006567654235845601, OY: 0, OZ: -0.9999997843295657, Theta: 1.0007760378209969},
+	)
 )
