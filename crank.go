@@ -38,16 +38,6 @@ func Crank(ctx context.Context, r *Robot) error {
 	}
 	time.Sleep(3 * time.Second) // wait for gripper to finish opening
 
-	// Move peeling arm back to align pose
-	if err := r.moveFree(ctx, r.peelingArm.Name().Name, PeelAlignPose, nil); err != nil {
-		return fmt.Errorf("move to align start pose: %w", err)
-	}
-
-	// Move peeling arm back to above pose
-	if err := r.moveFree(ctx, r.peelingArm.Name().Name, PeelAbovePose, nil); err != nil {
-		return fmt.Errorf("move to above start pose: %w", err)
-	}
-
 	// Move peeling arm to crank start pose, allowing collision with the crank
 	if err := r.moveFreeToGrabCrank(ctx, r.peelingArm.Name().Name, CrankStartPose, nil); err != nil {
 		return fmt.Errorf("move to crank start pose: %w", err)
