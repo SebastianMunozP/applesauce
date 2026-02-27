@@ -168,7 +168,15 @@ func buildSpiralReq(gp r3.Vector, crankOrientation spatialmath.Orientation, peel
 					},
 					{
 						Frame1: "applegripper:case-gripper",
+						Frame2: "peeler-crank",
+					},
+					{
+						Frame1: "applegripper:claws",
 						Frame2: "peeler-crank-handle",
+					},
+					{
+						Frame1: "applegripper:claws",
+						Frame2: "peeler-crank",
 					},
 				},
 			},
