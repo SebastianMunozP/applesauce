@@ -24,7 +24,7 @@ func PeelHardcoded(ctx context.Context, r *Robot) error {
 		return fmt.Errorf("move to pose-above: %w", err)
 	}
 
-	// Sleep for 5 seconds
+	// Sleep
 	r.logger.Info("Sleeping for 1 second")
 	time.Sleep(1 * time.Second)
 
@@ -34,7 +34,7 @@ func PeelHardcoded(ctx context.Context, r *Robot) error {
 		return fmt.Errorf("move to pose-align: %w", err)
 	}
 
-	// Sleep for 5 seconds
+	// Sleep
 	r.logger.Info("Sleeping for 1 second")
 	time.Sleep(1 * time.Second)
 
@@ -44,13 +44,26 @@ func PeelHardcoded(ctx context.Context, r *Robot) error {
 		},
 	}
 
+	// Increase arm speed before pierce
+	r.logger.Infof("Increasing arm speed before pierce")
+
+	if _, err := r.primaryArm.DoCommand(ctx, map[string]interface{}{"set_speed": 30}); err != nil {
+		return fmt.Errorf("failed to increase gripper and acceleration speed: %w", err)
+	}
+
 	// Move to pose-pierce (push apple onto spikes).
 	r.logger.Infof("Moving to pose-pierce (pushing onto spikes): %v", PeelPiercePose)
 	if err := r.moveLinear(ctx, r.primaryArm.Name().Name, PeelPiercePose, nil, 1, armPeelerCrankCollision); err != nil {
 		return fmt.Errorf("move to pose-pierce: %w", err)
 	}
 
-	// Sleep for 5 seconds
+	// Decrease arm speed after pierce
+	r.logger.Infof("Decreasing arm speed after pierce")
+	if _, err := r.primaryArm.DoCommand(ctx, map[string]interface{}{"set_speed": 20}); err != nil {
+		return fmt.Errorf("failed to decrease gripper and acceleration speed: %w", err)
+	}
+
+	// Sleep
 	r.logger.Info("Sleeping for 1 second")
 	time.Sleep(1 * time.Second)
 
