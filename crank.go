@@ -36,9 +36,10 @@ func Crank(ctx context.Context, r *Robot) error {
 	if err := r.appleGripper.Open(ctx, nil); err != nil {
 		return fmt.Errorf("open gripper: %w", err)
 	}
+
 	time.Sleep(3 * time.Second) // wait for gripper to finish opening
 
-	// Move peeling arm to crank start pose, allowing collision with the crank
+	// Move peeling arm to crank start pose.
 	if err := r.moveFreeToGrabCrank(ctx, r.peelingArm.Name().Name, CrankStartPose, nil); err != nil {
 		return fmt.Errorf("move to crank start pose: %w", err)
 	}
@@ -48,6 +49,8 @@ func Crank(ctx context.Context, r *Robot) error {
 		r.logger.Warnf("Grab failed: %v", err)
 		return err
 	}
+
+	time.Sleep(3 * time.Second) // wait for gripper to finish opening
 
 	// Query the gripper's current world-frame pose — held constant throughout
 	// the spiral and used as the retract destination.
@@ -79,24 +82,33 @@ func Crank(ctx context.Context, r *Robot) error {
 		r.logger.Info("Executing cached crank spiral trajectory")
 	}
 
-	// Increase arm speed before pierce
-	r.logger.Infof("Increasing arm speed before pierce")
-	if _, err := r.primaryArm.DoCommand(ctx, map[string]interface{}{"set_speed": 30}); err != nil {
-		return fmt.Errorf("failed to increase gripper and acceleration speed: %w", err)
-	}
-
-	defer func() {
-		// Decrease arm speed before returning
-		r.logger.Infof("Decreasing arm speed before returning")
-		if _, err := r.primaryArm.DoCommand(ctx, map[string]interface{}{"set_speed": 30}); err != nil {
-			r.logger.Infof("Failed to reset arm speed: %v", err)
-		}
-	}()
-
 	if err := r.doExecute(ctx, r.crankSpiralTrajectory); err != nil {
 		return fmt.Errorf("execute crank spiral: %w", err)
 	}
 	r.logger.Info("Cranking complete")
+
+	// Open gripper.
+	if err := r.appleGripper.Open(ctx, nil); err != nil {
+		return fmt.Errorf("open gripper: %w", err)
+	}
+
+	time.Sleep(3 * time.Second) // wait for gripper to finish opening
+
+	// Get the current pose of the gripper.
+	gripperPoseInFrame, err = r.motion.GetPose(ctx, r.peelingGripper.Name().Name, "world", nil, nil)
+	if err != nil {
+		return fmt.Errorf("get gripper orientation: %w", err)
+	}
+	gripperPose = gripperPoseInFrame.Pose()
+	upPose := spatialmath.NewPose(
+		r3.Vector{X: gripperPose.Point().X, Y: gripperPose.Point().Y, Z: gripperPose.Point().Z + 300},
+		gripperPose.Orientation(),
+	)
+
+	if err := r.moveFree(ctx, r.peelingArm.Name().Name, upPose, nil); err != nil {
+		return fmt.Errorf("move to up pose: %w", err)
+	}
+
 	return nil
 }
 
@@ -163,28 +175,7 @@ func buildSpiralReq(gp r3.Vector, crankOrientation spatialmath.Orientation, peel
 			LineToleranceMm:          1.0,
 			OrientationToleranceDegs: 2.0,
 		}},
-		nil, nil, []motionplan.CollisionSpecification{
-			{
-				Allows: []motionplan.CollisionSpecificationAllowedFrameCollisions{
-					{
-						Frame1: "applegripper:case-gripper",
-						Frame2: "peeler-crank-handle",
-					},
-					{
-						Frame1: "applegripper:case-gripper",
-						Frame2: "peeler-crank",
-					},
-					{
-						Frame1: "applegripper:claws",
-						Frame2: "peeler-crank-handle",
-					},
-					{
-						Frame1: "applegripper:claws",
-						Frame2: "peeler-crank",
-					},
-				},
-			},
-		},
+		nil, nil, nil,
 	)
 
 	return motion.MoveReq{

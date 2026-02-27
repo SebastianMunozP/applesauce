@@ -109,7 +109,7 @@ func Grasp(ctx context.Context, r *Robot) error {
 		}
 
 		// Grab.
-		_, err := r.primaryArm.DoCommand(ctx, map[string]interface{}{"move_gripper": 350})
+		_, err := r.primaryArm.DoCommand(ctx, map[string]interface{}{"move_gripper": 200})
 		if err != nil {
 			r.logger.Warnf("Grab failed: %v", err)
 			continue
