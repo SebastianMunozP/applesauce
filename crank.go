@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"github.com/golang/geo/r3"
+	viz "github.com/viam-labs/motion-tools/client/client"
 
 	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/motionplan/armplanning"
@@ -63,13 +64,14 @@ func Crank(ctx context.Context, r *Robot) error {
 	}
 	if r.crankSpiralTrajectory == nil {
 		r.logger.Info("Planning crank spiral trajectory (first run; will be cached)")
-		traj, err := r.doPlan(ctx, buildSpiralReq(gp, gripperPose.Orientation(), r.peelingGripper.Name().Name))
-		if err != nil {
-			return fmt.Errorf("plan crank spiral: %w", err)
-		}
-		r.crankSpiralTrajectory = traj
-		r.saveCachedTrajectory("crank_spiral.json", traj)
-		r.logger.Infof("Crank spiral planned: %d trajectory steps", len(traj))
+		buildSpiralReq(gp, gripperPose.Orientation(), r.peelingGripper.Name().Name, r)
+		// traj, err := r.doPlan(ctx, spiralPlan)
+		// if err != nil {
+		// 	return fmt.Errorf("plan crank spiral: %w", err)
+		// }
+		// // r.crankSpiralTrajectory = traj
+		// r.saveCachedTrajectory("crank_spiral.json", traj)
+		// r.logger.Infof("Crank spiral planned: %d trajectory steps", len(traj))
 	} else {
 		r.logger.Info("Executing cached crank spiral trajectory")
 	}
@@ -83,10 +85,15 @@ func Crank(ctx context.Context, r *Robot) error {
 
 // buildSpiralReq constructs the MoveReq for the full crank spiral, with all
 // intermediate 1 mm arc steps batched as waypoints.
-func buildSpiralReq(gp r3.Vector, crankOrientation spatialmath.Orientation, peelingGripperName string) motion.MoveReq {
+func buildSpiralReq(gp r3.Vector, crankOrientation spatialmath.Orientation, peelingGripperName string, r *Robot) motion.MoveReq {
+	r.logger.Info("Building spiral trajectory")
 	circumference := 2 * math.Pi * crankRadiusMm
 	stepsPerRev := int(math.Ceil(circumference / crankStepMm))
 	totalSteps := stepsPerRev * crankRevolutions
+
+	r.logger.Infof("Circumference: %.2f mm", circumference)
+	r.logger.Infof("Steps per revolution: %d", stepsPerRev)
+	r.logger.Infof("Total steps: %d", totalSteps)
 
 	axis := CrankAxis.Normalize()
 	ref := r3.Vector{X: 0, Y: 1, Z: 0}
@@ -109,8 +116,19 @@ func buildSpiralReq(gp r3.Vector, crankOrientation spatialmath.Orientation, peel
 	}
 
 	wpList := make([]interface{}, 0, totalSteps-2)
+	r.logger.Infof("Center: X=%.3f Y=%.3f Z=%.3f", center.X, center.Y, center.Z)
+	r.logger.Infof("Offset: X=%.3f Y=%.3f Z=%.3f", offset.X, offset.Y, offset.Z)
+	r.logger.Infof("Start angle: %.4f radians", startAngle)
 	for step := 1; step < totalSteps-1; step++ {
 		pif := referenceframe.NewPoseInFrame("world", poseAtStep(step))
+		// Pring and plot 1 every 1000 steps
+		if step%1000 == 0 {
+			r.logger.Infof("Waypoint %d: X=%.3f Y=%.3f Z=%.3f", step, pif.Pose().Point().X, pif.Pose().Point().Y, pif.Pose().Point().Z)
+			if err := viz.DrawPoses([]spatialmath.Pose{pif.Pose()}, []string{"blue"}, true); err != nil {
+				r.logger.Warnf("Failed to draw waypoint %d: %v", step, err)
+			}
+		}
+
 		wpState := armplanning.NewPlanState(
 			referenceframe.FrameSystemPoses{peelingGripperName: pif},
 			nil,
@@ -119,6 +137,9 @@ func buildSpiralReq(gp r3.Vector, crankOrientation spatialmath.Orientation, peel
 	}
 
 	finalPIF := referenceframe.NewPoseInFrame("world", poseAtStep(totalSteps-1))
+	if err := viz.DrawPoses([]spatialmath.Pose{finalPIF.Pose()}, []string{"blue"}, true); err != nil {
+		r.logger.Warnf("Failed to draw final waypoint: %v", err)
+	}
 
 	constraints := motionplan.NewConstraints(
 		[]motionplan.LinearConstraint{{
