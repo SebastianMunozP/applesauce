@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/golang/geo/r3"
 
@@ -46,8 +47,7 @@ func RemoveApple(ctx context.Context, r *Robot) error {
 	grabOrientation := PeelerAppleGrabPose.Orientation()
 
 	armTableCollision := motionplan.CollisionSpecification{
-		Allows: []motionplan.CollisionSpecificationAllowedFrameCollisions{
-		},
+		Allows: []motionplan.CollisionSpecificationAllowedFrameCollisions{},
 	}
 
 	// Open gripper before approaching.
@@ -57,12 +57,12 @@ func RemoveApple(ctx context.Context, r *Robot) error {
 	}
 
 	// Move to recorded approach joints above the peeler grab pose.
-	if RemoveAppleApproachJoints == nil {
-		r.logger.Warn("RemoveAppleApproachJoints not recorded (stub); skipping apple removal")
+	if RemoveAbovePeelerPose == nil {
+		r.logger.Warn("RemoveAbovePeelerPose not recorded (stub); skipping apple removal")
 		return nil
 	}
 	r.logger.Info("Moving to apple removal approach joints")
-	if err := r.moveToJoints(ctx, "apple-arm", RemoveAppleApproachJoints); err != nil {
+	if err := r.moveFree(ctx, "apple-arm", RemoveAbovePeelerPose, nil); err != nil {
 		return fmt.Errorf("move to apple removal approach joints: %w", err)
 	}
 
@@ -73,13 +73,18 @@ func RemoveApple(ctx context.Context, r *Robot) error {
 	}
 
 	// Grab the apple.
-	if _, err := r.appleGripper.Grab(ctx, nil); err != nil {
+	_, err := r.primaryArm.DoCommand(ctx, map[string]interface{}{"move_gripper": 350})
+	if err != nil {
+		r.logger.Warnf("Grab failed: %v", err)
 		return fmt.Errorf("grab peeled apple: %w", err)
 	}
 
+	// Wait for 1 second
+	time.Sleep(3 * time.Second)
+
 	// Pull apple off by moving linearly 300mm in -X.
 	pullPose := spatialmath.NewPose(
-		r3.Vector{X: grabPoint.X - 300, Y: grabPoint.Y, Z: grabPoint.Z},
+		r3.Vector{X: grabPoint.X + 300, Y: grabPoint.Y, Z: grabPoint.Z},
 		grabOrientation,
 	)
 	r.logger.Info("Pulling apple off peeler")

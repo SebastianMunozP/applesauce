@@ -50,7 +50,10 @@ var (
 
 	// PeeledAppleBowlPose is the world-frame pose of the bowl/bin for peeled apples.
 	// STUB: measure peeled apple deposit location.
-	PeeledAppleBowlPose spatialmath.Pose
+	PeeledAppleBowlPose = spatialmath.NewPose(
+		r3.Vector{X: 550.2553925742184, Y: -160.88445600037534, Z: 300.0876116793666},
+		&spatialmath.OrientationVector{OX: 0.0006667417527242694, OY: 0, OZ: -0.9999997777276931, Theta: -0.9998795903312517},
+	)
 
 	// WasteBinPose is the world-frame pose of the waste bin for cores/scraps.
 	// STUB: measure waste bin location.
@@ -69,7 +72,10 @@ var (
 	// STUB: measure the cored apple location on peeler.
 	PeelerCorePose spatialmath.Pose
 
-	PeelerAppleGrabPose spatialmath.Pose
+	PeelerAppleGrabPose = spatialmath.NewPose(
+		r3.Vector{X: 100.33101409395834, Y: 460.4615834758041, Z: 234.75251348420437},
+		&spatialmath.OrientationVector{OX: 0.002974791137049804, OY: -0.03783899833918083, OZ: -0.9992794207939928, Theta: -1.4859695283484187},
+	)
 
 	// PeelerSpikeRetractPose is the position the peeling arm moves to
 	// in order to fully retract the spikes from the core. Recorded 2026-02-25.
@@ -105,6 +111,21 @@ var (
 	CrankStartPose = spatialmath.NewPose(
 		r3.Vector{X: -334.8481615183904, Y: 470, Z: 170},
 		&spatialmath.OrientationVector{OX: 0.006, OY: -0.04411434417065586, OZ: -0.9989968896575422, Theta: -1.4286907032643186},
+	)
+
+	RemoveAbovePeelerPose = spatialmath.NewPose(
+		r3.Vector{X: 100.33119524534521, Y: 460.46, Z: 340},
+		&spatialmath.OrientationVector{OX: 0.0029737617022336546, OY: -0.03784026627992616, OZ: -0.999279375845015, Theta: -1.4860008544815482},
+	)
+
+	RemoveAppleGraspPose = spatialmath.NewPose(
+		r3.Vector{X: 100.33101409395834, Y: 460.4615834758041, Z: 234.75251348420437},
+		&spatialmath.OrientationVector{OX: 0.002974791137049804, OY: -0.03783899833918083, OZ: -0.9992794207939928, Theta: -1.4859695283484187},
+	)
+
+	RemoveAppleRemovePose = spatialmath.NewPose(
+		r3.Vector{X: 300.33101409395834, Y: 460.4615834758041, Z: 234.75251348420437},
+		&spatialmath.OrientationVector{OX: 0.002974791137049804, OY: -0.03783899833918083, OZ: -0.9992794207939928, Theta: -1.4859695283484187},
 	)
 
 	RemoveAboveBowlPose = spatialmath.NewPose(
