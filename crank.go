@@ -37,9 +37,6 @@ func Crank(ctx context.Context, r *Robot) error {
 		return fmt.Errorf("move to crank start pose: %w", err)
 	}
 
-	// if _, err := r.peelingGripper.Grab(ctx, nil); err != nil {
-	// 	return fmt.Errorf("grasp crank handle: %w", err)
-	// }
 	_, err := r.peelingArm.DoCommand(ctx, map[string]interface{}{"move_gripper": 100})
 	if err != nil {
 		r.logger.Warnf("Grab failed: %v", err)
@@ -64,21 +61,21 @@ func Crank(ctx context.Context, r *Robot) error {
 	}
 	if r.crankSpiralTrajectory == nil {
 		r.logger.Info("Planning crank spiral trajectory (first run; will be cached)")
-		buildSpiralReq(gp, gripperPose.Orientation(), r.peelingGripper.Name().Name, r)
-		// traj, err := r.doPlan(ctx, spiralPlan)
-		// if err != nil {
-		// 	return fmt.Errorf("plan crank spiral: %w", err)
-		// }
-		// // r.crankSpiralTrajectory = traj
-		// r.saveCachedTrajectory("crank_spiral.json", traj)
-		// r.logger.Infof("Crank spiral planned: %d trajectory steps", len(traj))
+		spiralPlan := buildSpiralReq(gp, gripperPose.Orientation(), r.peelingGripper.Name().Name, r)
+		traj, err := r.doPlan(ctx, spiralPlan)
+		if err != nil {
+			return fmt.Errorf("plan crank spiral: %w", err)
+		}
+		r.crankSpiralTrajectory = traj
+		r.saveCachedTrajectory("crank_spiral.json", traj)
+		r.logger.Infof("Crank spiral planned: %d trajectory steps", len(traj))
 	} else {
 		r.logger.Info("Executing cached crank spiral trajectory")
 	}
 
-	if err := r.doExecute(ctx, r.crankSpiralTrajectory); err != nil {
-		return fmt.Errorf("execute crank spiral: %w", err)
-	}
+	// if err := r.doExecute(ctx, r.crankSpiralTrajectory); err != nil {
+	// 	return fmt.Errorf("execute crank spiral: %w", err)
+	// }
 	r.logger.Info("Cranking complete")
 	return nil
 }
