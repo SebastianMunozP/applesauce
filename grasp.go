@@ -18,7 +18,7 @@ import (
 const (
 	maxGraspAttempts   = 3
 	graspApproachMm    = 200.0
-	graspFinalOffsetMm = 30.0
+	graspFinalOffsetMm = 10.0
 	obstacleSafetyMm   = 5.0
 )
 
