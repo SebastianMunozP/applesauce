@@ -103,7 +103,7 @@ var (
 	)
 
 	CrankStartPose = spatialmath.NewPose(
-		r3.Vector{X: -334.8481615183904, Y: 470, Z: 160},
+		r3.Vector{X: -334.8481615183904, Y: 470, Z: 170},
 		&spatialmath.OrientationVector{OX: 0.006, OY: -0.04411434417065586, OZ: -0.9989968896575422, Theta: -1.4286907032643186},
 	)
 )

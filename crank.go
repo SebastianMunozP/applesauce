@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/golang/geo/r3"
 	viz "github.com/viam-labs/motion-tools/client/client"
@@ -31,13 +32,19 @@ func Crank(ctx context.Context, r *Robot) error {
 		r.logger.Warn("Peeling arm not available (stub); skipping crank")
 		return nil
 	}
+	// Open gripper.
+	if err := r.appleGripper.Open(ctx, nil); err != nil {
+		return fmt.Errorf("open gripper: %w", err)
+	}
+
+	time.Sleep(3 * time.Second) // wait for gripper to finish opening
 
 	// Move peeling arm to crank start pose.
 	if err := r.moveFree(ctx, r.peelingArm.Name().Name, CrankStartPose, nil); err != nil {
 		return fmt.Errorf("move to crank start pose: %w", err)
 	}
 
-	_, err := r.peelingArm.DoCommand(ctx, map[string]interface{}{"move_gripper": 100})
+	_, err := r.peelingArm.DoCommand(ctx, map[string]interface{}{"move_gripper": 200})
 	if err != nil {
 		r.logger.Warnf("Grab failed: %v", err)
 		return err
@@ -73,9 +80,9 @@ func Crank(ctx context.Context, r *Robot) error {
 		r.logger.Info("Executing cached crank spiral trajectory")
 	}
 
-	// if err := r.doExecute(ctx, r.crankSpiralTrajectory); err != nil {
-	// 	return fmt.Errorf("execute crank spiral: %w", err)
-	// }
+	if err := r.doExecute(ctx, r.crankSpiralTrajectory); err != nil {
+		return fmt.Errorf("execute crank spiral: %w", err)
+	}
 	r.logger.Info("Cranking complete")
 	return nil
 }
@@ -119,7 +126,7 @@ func buildSpiralReq(gp r3.Vector, crankOrientation spatialmath.Orientation, peel
 	for step := 1; step < totalSteps-1; step++ {
 		pif := referenceframe.NewPoseInFrame("world", poseAtStep(step))
 		// Pring and plot 1 every 1000 steps
-		if step%1000 == 0 {
+		if step%100 == 0 {
 			r.logger.Infof("Waypoint %d: X=%.3f Y=%.3f Z=%.3f", step, pif.Pose().Point().X, pif.Pose().Point().Y, pif.Pose().Point().Z)
 			if err := viz.DrawPoses([]spatialmath.Pose{pif.Pose()}, []string{"blue"}, true); err != nil {
 				r.logger.Warnf("Failed to draw waypoint %d: %v", step, err)
