@@ -44,7 +44,7 @@ func Crank(ctx context.Context, r *Robot) error {
 		return fmt.Errorf("move to crank start pose: %w", err)
 	}
 
-	_, err := r.peelingArm.DoCommand(ctx, map[string]interface{}{"move_gripper": 200})
+	_, err := r.peelingArm.DoCommand(ctx, map[string]interface{}{"move_gripper": 100})
 	if err != nil {
 		r.logger.Warnf("Grab failed: %v", err)
 		return err
