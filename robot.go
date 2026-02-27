@@ -239,6 +239,14 @@ func (r *Robot) moveFreeForGrasp(ctx context.Context, componentName string, dest
 			Frame1: "applegripper",
 			Frame2: obstacle,
 		})
+		allowed = append(allowed, motionplan.CollisionSpecificationAllowedFrameCollisions{
+			Frame1: "applegripper:claws",
+			Frame2: obstacle,
+		})
+		allowed = append(allowed, motionplan.CollisionSpecificationAllowedFrameCollisions{
+			Frame1: "applegripper:case-gripper",
+			Frame2: obstacle,
+		})
 	}
 
 	_, err := r.motion.Move(ctx, motion.MoveReq{
