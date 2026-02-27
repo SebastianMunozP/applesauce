@@ -36,11 +36,20 @@ func Crank(ctx context.Context, r *Robot) error {
 	if err := r.appleGripper.Open(ctx, nil); err != nil {
 		return fmt.Errorf("open gripper: %w", err)
 	}
-
 	time.Sleep(3 * time.Second) // wait for gripper to finish opening
 
-	// Move peeling arm to crank start pose.
-	if err := r.moveFree(ctx, r.peelingArm.Name().Name, CrankStartPose, nil); err != nil {
+	// Move peeling arm back to align pose
+	if err := r.moveFree(ctx, r.peelingArm.Name().Name, PeelAlignPose, nil); err != nil {
+		return fmt.Errorf("move to align start pose: %w", err)
+	}
+
+	// Move peeling arm back to above pose
+	if err := r.moveFree(ctx, r.peelingArm.Name().Name, PeelAbovePose, nil); err != nil {
+		return fmt.Errorf("move to above start pose: %w", err)
+	}
+
+	// Move peeling arm to crank start pose, allowing collision with the crank
+	if err := r.moveFreeToGrabCrank(ctx, r.peelingArm.Name().Name, CrankStartPose, nil); err != nil {
 		return fmt.Errorf("move to crank start pose: %w", err)
 	}
 
@@ -150,7 +159,20 @@ func buildSpiralReq(gp r3.Vector, crankOrientation spatialmath.Orientation, peel
 			LineToleranceMm:          1.0,
 			OrientationToleranceDegs: 2.0,
 		}},
-		nil, nil, nil,
+		nil, nil, []motionplan.CollisionSpecification{
+			{
+				Allows: []motionplan.CollisionSpecificationAllowedFrameCollisions{
+					{
+						Frame1: "applegripper:case-gripper",
+						Frame2: "peeler-crank-handle",
+					},
+					{
+						Frame1: "applegripper:case-gripper",
+						Frame2: "peeler-crank-handle",
+					},
+				},
+			},
+		},
 	)
 
 	return motion.MoveReq{

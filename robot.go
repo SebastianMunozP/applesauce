@@ -256,6 +256,38 @@ func (r *Robot) moveFreeForGrasp(ctx context.Context, componentName string, dest
 
 // moveFree moves a component to the destination pose with no path constraints.
 // The motion planner chooses the optimal collision-free path.
+func (r *Robot) moveFreeToGrabCrank(ctx context.Context, componentName string, dest spatialmath.Pose, worldState *referenceframe.WorldState) error {
+	constraints := motionplan.NewConstraints(
+		nil,
+		nil,
+		nil,
+		[]motionplan.CollisionSpecification{
+			{
+				Allows: []motionplan.CollisionSpecificationAllowedFrameCollisions{
+					{
+						Frame1: "applegripper:claws",
+						Frame2: "peeler-crank-handle",
+					},
+					{
+						Frame1: "applegripper:case-gripper",
+						Frame2: "peeler-crank-handle",
+					},
+				},
+			},
+		},
+	)
+
+	_, err := r.motion.Move(ctx, motion.MoveReq{
+		ComponentName: componentName,
+		Destination:   referenceframe.NewPoseInFrame("world", dest),
+		WorldState:    worldState,
+		Constraints:   constraints,
+	})
+	return err
+}
+
+// moveFree moves a component to the destination pose with no path constraints.
+// The motion planner chooses the optimal collision-free path.
 func (r *Robot) moveFree(ctx context.Context, componentName string, dest spatialmath.Pose, worldState *referenceframe.WorldState) error {
 	_, err := r.motion.Move(ctx, motion.MoveReq{
 		ComponentName: componentName,
