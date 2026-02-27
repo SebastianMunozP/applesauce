@@ -31,18 +31,23 @@ func Crank(ctx context.Context, r *Robot) error {
 		return nil
 	}
 
-	// Move peeling arm to crank grasp position.
-	if err := r.moveToJoints(ctx, "peeling-arm", PeelingCrankGraspJoints); err != nil {
-		return fmt.Errorf("move to crank grasp: %w", err)
+	// Move peeling arm to crank start pose.
+	if err := r.moveFree(ctx, r.peelingArm.Name().Name, CrankStartPose, nil); err != nil {
+		return fmt.Errorf("move to crank start pose: %w", err)
 	}
 
-	if _, err := r.peelingGripper.Grab(ctx, nil); err != nil {
-		return fmt.Errorf("grasp crank handle: %w", err)
+	// if _, err := r.peelingGripper.Grab(ctx, nil); err != nil {
+	// 	return fmt.Errorf("grasp crank handle: %w", err)
+	// }
+	_, err := r.peelingArm.DoCommand(ctx, map[string]interface{}{"move_gripper": 100})
+	if err != nil {
+		r.logger.Warnf("Grab failed: %v", err)
+		return err
 	}
 
 	// Query the gripper's current world-frame pose — held constant throughout
 	// the spiral and used as the retract destination.
-	gripperPoseInFrame, err := r.motion.GetPose(ctx, "peeling-gripper", "world", nil, nil)
+	gripperPoseInFrame, err := r.motion.GetPose(ctx, r.peelingGripper.Name().Name, "world", nil, nil)
 	if err != nil {
 		return fmt.Errorf("get gripper orientation: %w", err)
 	}
@@ -58,7 +63,7 @@ func Crank(ctx context.Context, r *Robot) error {
 	}
 	if r.crankSpiralTrajectory == nil {
 		r.logger.Info("Planning crank spiral trajectory (first run; will be cached)")
-		traj, err := r.doPlan(ctx, buildSpiralReq(gp, gripperPose.Orientation()))
+		traj, err := r.doPlan(ctx, buildSpiralReq(gp, gripperPose.Orientation(), r.peelingGripper.Name().Name))
 		if err != nil {
 			return fmt.Errorf("plan crank spiral: %w", err)
 		}
@@ -78,7 +83,7 @@ func Crank(ctx context.Context, r *Robot) error {
 
 // buildSpiralReq constructs the MoveReq for the full crank spiral, with all
 // intermediate 1 mm arc steps batched as waypoints.
-func buildSpiralReq(gp r3.Vector, crankOrientation spatialmath.Orientation) motion.MoveReq {
+func buildSpiralReq(gp r3.Vector, crankOrientation spatialmath.Orientation, peelingGripperName string) motion.MoveReq {
 	circumference := 2 * math.Pi * crankRadiusMm
 	stepsPerRev := int(math.Ceil(circumference / crankStepMm))
 	totalSteps := stepsPerRev * crankRevolutions
@@ -107,7 +112,7 @@ func buildSpiralReq(gp r3.Vector, crankOrientation spatialmath.Orientation) moti
 	for step := 1; step < totalSteps-1; step++ {
 		pif := referenceframe.NewPoseInFrame("world", poseAtStep(step))
 		wpState := armplanning.NewPlanState(
-			referenceframe.FrameSystemPoses{"peeling-gripper": pif},
+			referenceframe.FrameSystemPoses{peelingGripperName: pif},
 			nil,
 		)
 		wpList = append(wpList, wpState.Serialize())
@@ -124,7 +129,7 @@ func buildSpiralReq(gp r3.Vector, crankOrientation spatialmath.Orientation) moti
 	)
 
 	return motion.MoveReq{
-		ComponentName: "peeling-gripper",
+		ComponentName: peelingGripperName,
 		Destination:   finalPIF,
 		Constraints:   constraints,
 		Extra: map[string]interface{}{

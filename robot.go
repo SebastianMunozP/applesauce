@@ -129,12 +129,12 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	// }
 	// r.secondaryArm = secondaryArm
 
-	// // Peeling arm — required.
-	// peelingArm, err := arm.FromProvider(machine, "peeling-arm")
-	// if err != nil {
-	// 	return nil, fmt.Errorf("peeling arm: %w", err)
-	// }
-	// r.peelingArm = peelingArm
+	// Peeling arm — required.
+	peelingArm, err := arm.FromProvider(machine, "apple-arm")
+	if err != nil {
+		return nil, fmt.Errorf("peeling arm: %w", err)
+	}
+	r.peelingArm = peelingArm
 
 	// Apple gripper — required.
 	appleGripper, err := gripper.FromProvider(machine, "applegripper")
@@ -144,11 +144,11 @@ func NewRobot(ctx context.Context, machine robot.Robot, logger logging.Logger) (
 	r.appleGripper = appleGripper
 
 	// Peeling gripper — required.
-	// peelingGripper, err := gripper.FromProvider(machine, "peeling-gripper")
-	// if err != nil {
-	// 	return nil, fmt.Errorf("peeling gripper: %w", err)
-	// }
-	// r.peelingGripper = peelingGripper
+	peelingGripper, err := gripper.FromProvider(machine, "applegripper")
+	if err != nil {
+		return nil, fmt.Errorf("peeling gripper: %w", err)
+	}
+	r.peelingGripper = peelingGripper
 
 	// Primary camera — required.
 	primaryCam, err := camera.FromProvider(machine, "primary-cam")
